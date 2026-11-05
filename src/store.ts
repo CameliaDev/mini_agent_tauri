@@ -34,6 +34,9 @@ export interface Session {
   messages: UiMessage[];
   createdAt: number;
   updatedAt: number;
+  // 为 true 时，messages 是这次运行里的权威副本。
+  // 数据库快照不能再盖掉它：切走再切回来时，库里常常还没有刚发出的消息。
+  messagesLoaded: boolean;
 }
 
 interface ChatState {
@@ -55,7 +58,7 @@ interface ChatState {
   clearActiveSession: () => void;
   // 用数据库里的会话列表替换内存中的列表（启动时调用）
   hydrateSessions: (metas: SessionMeta[]) => void;
-  // 用数据库里的消息替换某个会话的消息（切换会话时调用）
+  // 首次把数据库里的消息灌进某个会话。已经在内存里接管的会话不会被盖掉。
   setSessionMessages: (sessionId: string, messages: UiMessage[]) => void;
   // 删掉某条消息之后的所有消息（重新生成前调用）
   truncateAfter: (sessionId: string, messageId: string) => void;
@@ -111,6 +114,40 @@ function emptySession(): Session {
     messages: [],
     createdAt: now,
     updatedAt: now,
+    // 本地新建的空会话没有需要回读的历史
+    messagesLoaded: true,
+  };
+}
+
+// 把数据库读到的消息灌进一个还没被内存接管的会话。
+// 已经接管的直接原样返回，避免切会话时用旧快照盖掉刚发出、或还在流式增长的消息。
+export function applyIncomingMessages(
+  session: Session,
+  incoming: UiMessage[],
+): Session {
+  if (session.messagesLoaded) return session;
+  const localById = new Map(session.messages.map((message) => [message.id, message]));
+  const merged = incoming.map((row) => {
+    const local = localById.get(row.id);
+    if (!local) return row;
+    // 同一条：内存更长，或这一轮还在跑，就留内存里的
+    if (
+      local.streaming ||
+      local.phase !== undefined ||
+      local.toolStatus === "running" ||
+      local.content.length > row.content.length
+    ) {
+      return local;
+    }
+    return row;
+  });
+  const incomingIds = new Set(incoming.map((message) => message.id));
+  // 库里还没有的，是加载过程中用户刚发出的，接在后面
+  const pending = session.messages.filter((message) => !incomingIds.has(message.id));
+  return {
+    ...session,
+    messages: [...merged, ...pending],
+    messagesLoaded: true,
   };
 }
 
@@ -229,7 +266,14 @@ export const useChatStore = create<ChatState>((set) => ({
       draft: "",
       sessions: s.sessions.map((session) =>
         session.id === s.activeSessionId
-          ? { ...session, title: "新对话", messages: [], updatedAt: Date.now() }
+          ? {
+              ...session,
+              title: "新对话",
+              messages: [],
+              updatedAt: Date.now(),
+              // 清空之后内存就是权威：在途的 load 不能把旧消息填回来
+              messagesLoaded: true,
+            }
           : session,
       ),
     })),
@@ -246,8 +290,9 @@ export const useChatStore = create<ChatState>((set) => ({
         id: meta.id,
         // 标题沿用
         title: meta.title,
-        // 消息先留空，等切过去再读
+        // 消息先留空，等切过去再读。loaded 为 false，第一次读库才会灌进来
         messages: [],
+        messagesLoaded: false,
         // 创建时间沿用
         createdAt: meta.created_at,
         // 更新时间沿用
@@ -266,12 +311,14 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  // 用数据库读回来的消息替换某个会话的消息
+  // 首次灌入数据库里的消息。内存已经接管的会话保持原样
   setSessionMessages: (sessionId, messages) =>
     set((s) => ({
-      // 只改这一个会话
+      // 只改这一个会话；apply 在 set 回调里读最新状态，避免覆盖加载期间新增的消息
       sessions: s.sessions.map((session) =>
-        session.id === sessionId ? { ...session, messages } : session,
+        session.id === sessionId
+          ? applyIncomingMessages(session, messages)
+          : session,
       ),
     })),
 
@@ -290,6 +337,8 @@ export const useChatStore = create<ChatState>((set) => ({
         return {
           ...session,
           messages: session.messages.slice(0, index + 1),
+          // 截断之后以内存为准，迟到的 load 不能把删掉的回复填回来
+          messagesLoaded: true,
         };
       }),
     })),

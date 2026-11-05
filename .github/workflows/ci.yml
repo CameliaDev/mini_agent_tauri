@@ -93,6 +93,10 @@ jobs:
       - name: tsc
         run: npx tsc --noEmit
 
+      # 会话切换不丢消息：不启动 Tauri，用内存里的命令替身跑 store + sessions
+      - name: session switch tests
+        run: npm run test:sessions
+
       # npm run build 会再跑一次 tsc，然后 vite build。
       # 这里不跑 tauri build：完整打包要 WebView 运行时，类型检查和单测已经够做质量门。
       - name: vite build

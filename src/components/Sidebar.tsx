@@ -24,12 +24,17 @@ export function Sidebar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen]);
 
-  // 切换会话：先切内存，再从数据库把消息读回来
-  // 顺序很重要：先切，loadMessagesOf 才知道往哪个会话里填
+  // 切换会话：先切内存，离开的那份对话立刻排队落库，目标会话只在还没灌过时才读库
   async function openSession(id: string) {
-    // 内存里立刻切过去，界面马上响应
-    selectSession(id);
-    // 再从数据库读这个会话的消息（慢一点也没关系，界面已经在新会话上了）
+    const previousId = useChatStore.getState().activeSessionId;
+    if (previousId !== id) {
+      // 内存里立刻切过去，界面马上响应
+      selectSession(id);
+      // 切走前把离开的会话写进库。生成还没结束时消息只在内存里，
+      // 不写的话，下次启动就丢了。写入失败不拦住切换，内存里这份还在。
+      void persistSession(previousId).catch(() => undefined);
+    }
+    // 目标会话若已经在内存里接管，load 会直接返回，不会用旧快照盖掉
     await loadMessagesOf(id);
   }
 
@@ -41,14 +46,18 @@ export function Sidebar() {
     deleteSession(id);
   }
 
-  // 新建对话：建完立刻落库，这样刷新页面它还在
+  // 新建对话：旧会话里还没落库的消息先写回去，再建这个空会话
   async function create() {
-    // 内存里新建（会切过去）
+    const previousId = useChatStore.getState().activeSessionId;
+    // 内存里新建（会切过去）。旧会话的消息还留在它自己的列表里
     newSession();
-    // 拿到当前会话 id
-    const state = useChatStore.getState();
-    // 落库
-    await persistSession(state.activeSessionId);
+    const createdId = useChatStore.getState().activeSessionId;
+    // 新会话也要落库。旧会话写入失败时不能把它漏掉。
+    try {
+      await persistSession(previousId);
+    } finally {
+      await persistSession(createdId);
+    }
   }
 
   // 分组：先按时间分桶，桶内保持原有顺序（新的在前）

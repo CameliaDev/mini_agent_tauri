@@ -26,7 +26,7 @@
 | `fn open_in_memory()` | 打开内存数据库，测试专用 |
 | `fn list_sessions()` | 列出全部会话，按更新时间倒序 |
 | `fn load_messages(session_id)` | 读某个会话的全部消息，按 `seq` 升序 |
-| `fn upsert_session(&SessionMeta)` | 新建或覆盖一个会话 |
+| `fn upsert_session(&SessionMeta)` | 新建或原地更新会话元信息，不删除它的消息 |
 | `fn append_message(session_id, seq, &StoredMessage)` | 追加一条消息 |
 | `fn delete_message(session_id, message_id)` | 删一条消息 |
 | `fn delete_session(session_id)` | 删会话（外键级联把消息一起删） |
@@ -35,7 +35,7 @@
 ## 逻辑要点
 
 1. **所有 SQL 都用参数绑定**（`params![]`），不做字符串拼接——这是防 SQL 注入的第一道防线。
-2. `INSERT OR REPLACE` 按消息 id 覆盖：前端重试或重落库时不会产生重复行。
+2. 消息用 `INSERT OR REPLACE` 按消息 id 覆盖：前端重试或重落库时不会产生重复行。会话不用 REPLACE：那会先删掉会话行，外键 `ON DELETE CASCADE` 会把消息一起删掉。会话是 `ON CONFLICT(id) DO UPDATE`，只改标题和时间。
 3. `tool_call` 是 `Option<Value>`，落库时序列化成 JSON 文本，读出来再 `serde_json::from_str`；解析失败就当没有，**不能因为一条脏数据整个会话读不出来**。
 4. `seq` 由调用方给（前端传数组下标），正好就是对话顺序；读取时 `ORDER BY seq ASC`。
 5. `Connection` 是 `!Sync` 的，所以外面包了 `Mutex`；`Arc` 是因为 Tauri 的 `State` 不可变，命令之间要共享同一个连接。
@@ -43,11 +43,12 @@
 
 ## 单元测试
 
-`cd src-tauri && cargo test`，本文件 7 个测试，全部用内存库，不需要真实文件：
+`cd src-tauri && cargo test`，本文件 8 个测试，全部用内存库，不需要真实文件：
 
 | 测试 | 验证什么 |
 | --- | --- |
 | `saves_and_lists_sessions` | 会话写进去能读出来 |
+| `upsert_session_keeps_messages` | 更新会话标题后，原来的消息还在 |
 | `upsert_replaces_by_id` | 同 id 重复存是覆盖而不是新增 |
 | `loads_messages_in_order` | 乱序写入后按 `seq` 读出来仍是对话顺序 |
 | `deletes_session_with_messages` | 删会话时消息随外键级联一起删 |
