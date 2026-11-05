@@ -1,8 +1,9 @@
 // App：两栏布局 —— 左侧会话栏 + 右侧对话区
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Composer } from "./components/Composer";
 import { MessageList } from "./components/MessageList";
 import { Sidebar } from "./components/Sidebar";
+import { useSidebarWidth } from "./hooks/useSidebarWidth";
 import { activeMessages, useChatStore } from "./store";
 // 引入持久化层的启动函数、清空函数和落库函数
 import { clearMessages, hydrateFromDb, persistSession } from "./ipc/sessions";
@@ -12,6 +13,7 @@ import "./App.css";
 // JS 判断「是不是抽屉模式」、CSS 决定「怎么摆」用的是同一个数字，改的时候两处一起改。
 // 默认窗口是 800×600，这个宽度以及更宽的桌面都要并排推挤，不能盖住对话。
 // 只有 ≤640px 才改成浮层：248px 侧栏再往里挤，主栏会窄到顶栏和输入区排不下。
+// 并排时侧栏可以拖宽，但抽屉自己的宽度仍是 248px，不跟着已保存的宽度变。
 const NARROW_QUERY = "(max-width: 640px)";
 
 function App() {
@@ -25,6 +27,9 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(
     () => !window.matchMedia(NARROW_QUERY).matches,
   );
+  // 宽度写在 .app 的 CSS 变量上，侧栏和收起用的负 margin 读同一个数
+  const appRef = useRef<HTMLDivElement>(null);
+  const sidebarWidth = useSidebarWidth(appRef);
 
   // 跟随窗口宽度变化：桌面宽度展开并排、极窄自动收起。
   // 用 matchMedia 的 change 事件，比监听 resize 更准（只在跨过断点时触发一次）
@@ -60,7 +65,10 @@ function App() {
   return (
     // 壳层就是侧栏 + 主栏。侧栏打开时主栏被挤到旁边，对话不会被盖住。
     // 以后设置页可以放进主栏，会话列表仍留在左侧。
-    <div className={`app${sidebarOpen ? "" : " app--collapsed"}`}>
+    <div
+      ref={appRef}
+      className={`app${sidebarOpen ? "" : " app--collapsed"}`}
+    >
       {/* 极窄时侧栏才浮在上面，这时加一层遮罩，点它就收起侧栏 */}
       {sidebarOpen && (
         <div
@@ -70,6 +78,21 @@ function App() {
         />
       )}
       <Sidebar />
+      {/* 贴在侧栏右缘上，本身不占宽度。≤640px 抽屉和收起时由 CSS 藏掉。
+          不要给它加 transform / position:fixed，输入框的祖先上也不能有。 */}
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整会话栏宽度"
+        aria-valuemin={sidebarWidth.min}
+        aria-valuemax={sidebarWidth.max}
+        aria-valuenow={sidebarWidth.width}
+        aria-valuetext={`${sidebarWidth.width}像素`}
+        tabIndex={0}
+        onPointerDown={sidebarWidth.onPointerDown}
+        onKeyDown={sidebarWidth.onKeyDown}
+      />
 
       <main className="main">
         <header className="topbar">

@@ -32,6 +32,7 @@
 | [`ipc/chat.ts`](./ipc/chat.md) | 调用后端、把事件翻译成消息 | **是** |
 | [`ipc/sessions.ts`](./ipc/sessions.md) | 会话与消息的落库 | **是** |
 | [`hooks/useStickToBottom.ts`](./hooks/useStickToBottom.md) | 流式滚动锚定 | 否 |
+| [`hooks/useSidebarWidth.ts`](./hooks/useSidebarWidth.md) | 侧栏拖动宽度，记在 localStorage | 否 |
 | [`components/Sidebar.tsx`](./components/Sidebar.md) | 左侧会话栏 | 否 |
 | [`components/MessageList.tsx`](./components/MessageList.md) | 消息滚动区 | 否 |
 | [`components/EmptyState.tsx`](./components/EmptyState.md) | 空态与示例卡片 | 否 |
