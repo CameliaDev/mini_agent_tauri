@@ -149,14 +149,21 @@ impl Storage {
         Ok(out)
     }
 
-    // 新建或更新一个会话（按 id 覆盖）
+    // 新建或更新一个会话（按 id 覆盖元信息，不动它的消息）
     pub async fn upsert_session(&self, meta: &SessionMeta) -> anyhow::Result<()> {
         // 拿锁
         let conn = self.conn.lock().await;
-        // 用 INSERT OR REPLACE：id 存在就整行替换，不存在就插入
+        // 必须原地 UPDATE，不能 INSERT OR REPLACE。
+        // REPLACE 会先 DELETE 旧行；messages.session_id 是 ON DELETE CASCADE，
+        // 这一下会把该会话的消息全部删掉。前端若正好在落库窗口里重读，
+        // 就会拿空列表盖掉内存里刚发出的消息。
         conn.execute(
-            "INSERT OR REPLACE INTO sessions (id, title, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO sessions (id, title, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+               title = excluded.title,
+               created_at = excluded.created_at,
+               updated_at = excluded.updated_at",
             params![meta.id, meta.title, meta.created_at, meta.updated_at],
         )?;
         // 返回成功
@@ -305,6 +312,34 @@ mod tests {
         assert_eq!(list.len(), 2);
         // 标题应该被正确保存
         assert!(list.iter().all(|s| s.title == "测试会话"));
+    }
+
+    // 更新会话标题不能把已经写进去的消息级联删掉。
+    // INSERT OR REPLACE 会先删掉旧行；外键 ON DELETE CASCADE 会把消息一起删掉。
+    #[tokio::test]
+    async fn upsert_session_keeps_messages() {
+        // 建库
+        let db = Storage::open_in_memory().await.expect("应该能打开内存库");
+        // 先有会话和一条消息
+        db.upsert_session(&meta("s1")).await.expect("应该能存会话");
+        db.append_message("s1", 0, &message("m0", "user", "你好"))
+            .await
+            .expect("应该能写消息");
+        // 只改标题，再存一次会话
+        let mut renamed = meta("s1");
+        renamed.title = "改过的标题".to_string();
+        renamed.updated_at = 300;
+        db.upsert_session(&renamed).await.expect("应该能更新会话");
+        // 消息还在
+        let messages = db.load_messages("s1").await.expect("应该能读消息");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].id, "m0");
+        assert_eq!(messages[0].content, "你好");
+        // 标题是新的
+        let list = db.list_sessions().await.expect("应该能列出会话");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title, "改过的标题");
+        assert_eq!(list[0].updated_at, 300);
     }
 
     // 同一个 id 重复存是覆盖而不是新增

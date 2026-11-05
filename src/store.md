@@ -13,7 +13,8 @@
 | --- | --- |
 | `UiMessage` | 界面上的一条消息：比后端 `ChatMessage` 多了 `id`、`streaming`、`phase`、`toolName`、`toolCall`、`toolStatus`、`createdAt` |
 | `AssistantPhase` / `ToolStatus` | 助手气泡的阶段，以及工具卡片的状态。不落库 |
-| `Session` | 一个会话：`id`、`title`、`messages`、`createdAt`、`updatedAt` |
+| `Session` | 一个会话：`id`、`title`、`messages`、`createdAt`、`updatedAt`、`messagesLoaded` |
+| `applyIncomingMessages(session, incoming)` | 把数据库消息灌进还没接管的会话。已接管的原样返回；加载期间刚发出的消息留在末尾 |
 | `ChatState` | 状态字段 + 所有动作的类型 |
 | `groupOf(session)` | 侧栏分组：今天 / 昨天 / 更早 |
 | `activeMessages(state)` | 取当前会话的消息；组件和 ipc 层都用它 |
@@ -30,7 +31,7 @@
 | `deleteSession(id)` | 删除会话；删的是当前会话时自动切到剩下第一个，全删光则补一个新空会话 |
 | `clearActiveSession()` | 清空当前会话里的消息，会话本身留着 |
 | `hydrateSessions(metas)` | 用数据库读回来的会话列表替换内存列表（启动时调用） |
-| `setSessionMessages(id, messages)` | 用数据库读回来的消息替换某个会话的消息（切换会话时调用） |
+| `setSessionMessages(id, messages)` | 首次把数据库消息灌进该会话。`messagesLoaded` 已经为 true 时不盖掉内存 |
 | `truncateAfter(id, messageId)` | 删掉某条消息之后的所有消息（重新生成前调用） |
 
 ## 消息相关的动作（全部作用在当前会话上）
@@ -59,6 +60,7 @@
 6. **`beginTurn` 和 `startAssistant` 都会把 `isStreaming` 置真**。发送、重新生成先走 `beginTurn`，这样数据库截断还没返回时停止按钮也已经换上。`startAssistant` 再置一次，保证气泡和按钮一致。
 7. **流式相关动作按「消息 id」定位会话**（`patchByMessage`）：用户在生成过程中切到别的会话时，文字片段必须继续写到原来那条消息上，而不是写进新会话。
 8. **`selectSession` 不碰 `isStreaming`**：后端那一轮可能还在跑，把它置 false 会让用户以为没在生成，从而并发发起第二轮。
+9. **`messagesLoaded`**：本地新建、清空、截断，或第一次成功灌库之后为 true。之后再读到的数据库快照不能替换 `messages`。发送后立刻切走再切回来时，库里往往还没有这一轮，不能拿空列表把内存盖掉。
 
 ## 依赖关系
 

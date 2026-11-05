@@ -82,28 +82,54 @@ export async function hydrateFromDb(): Promise<void> {
   await loadMessagesOf(useChatStore.getState().activeSessionId);
 }
 
-// 读某个会话的全部消息，填进 store
+// 读某个会话的全部消息，填进 store。
+// 内存已经接管的会话不再读库：切走期间库里的快照往往更旧，读回来会把消息盖没。
 export async function loadMessagesOf(sessionId: string): Promise<void> {
+  // 已经有权威副本就直接用内存
+  const current = useChatStore.getState().sessions.find((s) => s.id === sessionId);
+  if (!current || current.messagesLoaded) return;
+  // 读库期间用户可能已经发出新消息。那种会话灌完要按完整列表再落一次库，序号才不会冲突
+  const hadLocal = current.messages.length > 0;
   // 从数据库读
   const messages = await invoke<StoredMessage[]>("load_messages", {
     // Tauri 2 参数默认 camelCase，Rust 侧是 session_id
     sessionId,
   });
-  // 转成界面消息后填进 store
+  // 灌入前再看一次：等待期间可能已经清空，或另一笔 load 先灌完了
+  const latest = useChatStore.getState().sessions.find((s) => s.id === sessionId);
+  if (!latest || latest.messagesLoaded) return;
+  // set 回调里还会看一次 messagesLoaded，避免覆盖加载期间新增的消息
   useChatStore.getState().setSessionMessages(
     sessionId,
     messages.map(toUi),
   );
+  if (hadLocal) await persistSession(sessionId);
 }
 
+// 同一个会话的落库必须排队。
+// 切走时会先写一版，这一轮结束时再写一版；若两版并行，慢的那版可能用更短的正文把后写的完整正文盖掉。
+const persistChain = new Map<string, Promise<void>>();
+
 // 把某个会话的元信息 + 全部消息写回数据库
-export async function persistSession(sessionId: string): Promise<void> {
-  // 拿当前状态
-  const state = useChatStore.getState();
-  // 找到目标会话
-  const session = state.sessions.find((s) => s.id === sessionId);
-  // 会话不存在就不用写
-  if (!session) return;
+export function persistSession(sessionId: string): Promise<void> {
+  const prev = persistChain.get(sessionId) ?? Promise.resolve();
+  // 上一笔失败也不挡住下一笔，下一笔会按当时的内存重写
+  const next = prev.catch(() => undefined).then(() => writeSession(sessionId));
+  const tracked = next.finally(() => {
+    if (persistChain.get(sessionId) === tracked) persistChain.delete(sessionId);
+  });
+  persistChain.set(sessionId, tracked);
+  return tracked;
+}
+
+// 真正写入。调用时再读内存，这样排在后面的那笔能看到流式输出长出来的文字。
+async function writeSession(sessionId: string): Promise<void> {
+  const session = useChatStore.getState().sessions.find((s) => s.id === sessionId);
+  // 还没从库里灌进来时，内存里的 messages 不是全量。
+  // 按残缺列表重写 seq，会和库里已有的消息抢同一个序号。
+  if (!session || !session.messagesLoaded) return;
+  // 先记下这一笔要写的消息。写入过程中流式输出还会变，下一笔排队的落库会带上新文字。
+  const messages = session.messages;
   // 先写会话元信息
   await invoke("save_session", {
     // Rust 侧参数名是 session
@@ -114,12 +140,13 @@ export async function persistSession(sessionId: string): Promise<void> {
       title: session.title,
       // 创建时间
       created_at: session.createdAt,
-      // 更新时间：每次落库都刷新，侧栏排序靠它
-      updated_at: Date.now(),
+      // 用会话自己的更新时间。切走时落库不应把「刚看过」写成「刚更新」，
+      // 否则重启后按 updated_at 排序，旧会话会冒到新建对话前面。
+      updated_at: session.updatedAt,
     },
   });
   // 再逐条写消息；seq 用下标，正好就是对话顺序
-  for (const [index, message] of session.messages.entries()) {
+  for (const [index, message] of messages.entries()) {
     // 写入一条
     await invoke("append_message", {
       // 所属会话
