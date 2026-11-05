@@ -35,7 +35,7 @@
 
 | 平台 | 需要 |
 | --- | --- |
-| 通用 | Node.js 20+、Rust stable、npm |
+| 通用 | Node.js 20+、Rust stable（edition 2024，需要 1.85+）、npm |
 | Windows | MSVC 生成工具、WebView2 Runtime |
 | macOS | Xcode Command Line Tools |
 | Linux | `webkit2gtk-4.1`、`libayatana-appindicator3` 等 Tauri 系统依赖 |
@@ -72,8 +72,9 @@ npm run tauri dev
 | `npm run tauri dev` | 日常开发 |
 | `npm run tauri build` | 打包安装包 |
 | `cd src-tauri && cargo check` | 后端类型检查 |
-| `cd src-tauri && cargo test` | 后端单元测试（17 个） |
-| `cd src-tauri && cargo clippy --offline --lib --bins --no-deps` | 后端 lint |
+| `cd src-tauri && cargo test` | 后端单元测试（41 个） |
+| `cd src-tauri && cargo fmt --check` | 后端格式，与 CI 相同 |
+| `cd src-tauri && cargo clippy --all-targets -- -D warnings` | 后端 lint，与 CI 相同 |
 | `npx tsc --noEmit` | 前端类型检查 |
 
 ---
@@ -151,13 +152,14 @@ npm run tauri dev
 
 | 检查 | 命令 | 当前状态 |
 | --- | --- | --- |
-| 后端单元测试 | `cd src-tauri && cargo test` | **17 passed**（SSE 6 / 取消 4 / 存储 7） |
-| 后端 lint | `cargo clippy --offline --lib --bins --no-deps` | 无警告 |
+| 后端单元测试 | `cd src-tauri && cargo test` | **41 passed**（SSE 6 / 取消 4 / 存储 7 / 沙箱与文件工具 24） |
+| 后端格式 | `cd src-tauri && cargo fmt --check` | 通过 |
+| 后端 lint | `cargo clippy --all-targets -- -D warnings` | 无警告 |
 | 前端类型 | `npx tsc --noEmit` | 通过 |
 | 前端构建 | `npm run build` | 通过 |
-| 文档链接 | 扫描全部 `.md` 相对链接 | 零断链 |
+| CI | [`.github/workflows/ci.yml`](./.github/workflows/ci.md) | PR 与 `main` 上跑上面这几项，不打包 Tauri 安装包 |
 
-测试刻意集中在三类「最容易悄悄坏掉」的地方：SSE 分片解析、取消信号语义、SQLite 读写与级联删除。`cargo test` 用内存库，不需要任何外部服务或 API Key。
+测试刻意集中在四类「最容易悄悄坏掉」的地方：SSE 分片解析、取消信号语义、SQLite 读写与级联删除、工作区沙箱（路径逃逸、截断、唯一匹配）。`cargo test` 不需要任何外部服务或 API Key。文件工具的测试用临时目录，不碰仓库里的文件。
 
 ### 2.4 安全与密钥
 
@@ -166,7 +168,9 @@ npm run tauri dev
 | API Key | 只放 `.env`；`.gitignore` 排除 `.env` / `.env.*`，仅放行不含真实值的 `.env.example` |
 | SQL 注入 | 所有 SQL 用 `params![]` 绑定，不拼接字符串 |
 | XSS | `react-markdown` 默认转义 HTML，模型输出里的 `<script>` 只显示为文本 |
-| IPC 权限 | `capabilities/default.json` 只给 `core:default` + `opener:default`，无文件系统 / shell 权限 |
+| IPC 权限 | `capabilities/default.json` 只给 `core:default` + `opener:default`。窗口没有 Tauri 文件系统 / shell 权限 |
+| 文件工具沙箱 | `read` / `write` / `edit` / `list_dir` 走 Rust `std::fs`，只允许访问 `AppState.workspace_root`。`..`、根外绝对路径、指向外部的符号链接都会拒绝 |
+| 工作区内的密钥 | 沙箱不隐藏根目录里面的文件。`.env` 如果放在工作区里，模型可以用 `read` 读到。把 `MINI_AGENT_WORKSPACE` 指到不含密钥的目录，或不要把密钥放进工作区 |
 | 密钥读取 | 后端 `app/state.rs` 通过 `dotenvy` 注入 `AppState`，前端永远拿不到 Key |
 | 数据库位置 | 系统应用数据目录（`%APPDATA%/<应用名>/mini_agent.db`），不在仓库里 |
 
@@ -178,6 +182,19 @@ npm run tauri dev
 - 前端 `invoke` 的 reject 变成顶部错误条，不只在控制台里报错。
 - 工具执行失败**不中断循环**：把错误文本当成工具结果回给模型，让它自己换策略。
 - 流式通道关闭、SSE 坏帧、401、轮数超限都有明确去向；空助手气泡在 `finish` / `fail` 里被清掉。
+
+### 2.6 内置工具
+
+| 工具 | 作用 |
+| --- | --- |
+| `get_current_time` | 当前本地时间，无参数 |
+| `echo` | 把传入文本原样返回，用来验证带参数的工具调用 |
+| `read` | 按行读工作区里的 UTF-8 文本。`offset` 从 1 开始，`limit` 默认 400 行，超限会截断并告诉模型下一行 |
+| `write` | 覆盖写入。先写同目录临时文件，再 `rename` 替换。父目录必须已经存在 |
+| `edit` | 把唯一的一段 `old_string` 换成 `new_string`。找不到或找到多处都报错，并且不改文件 |
+| `list_dir` | 只列一层。跳过名为 `node_modules`、`target`、`.git` 的目录，路径中间经过它们也会拒绝 |
+
+工作区根来自 `MINI_AGENT_WORKSPACE`，不设则是进程启动时的当前目录，记在 `AppState.workspace_root` 里。细节在 [`src-tauri/src/tools/sandbox.md`](./src-tauri/src/tools/sandbox.md)。
 
 ---
 
@@ -253,6 +270,7 @@ mini_agent/
 ├── index.html / package.json / vite.config.ts / tsconfig*.json
 ├── .env.example                 ← 密钥模板（入库）；.env 不入库
 ├── .gitignore
+├── .github/workflows/ci.yml     CI：fmt / clippy / test，以及 tsc / vite build
 ├── src/                         前端
 │   ├── types.ts                 前后端共用的数据结构
 │   ├── store.ts                 唯一状态仓库：会话 + 消息
@@ -267,7 +285,7 @@ mini_agent/
 │   └── src/
 │       ├── protocol.rs          契约层
 │       ├── providers/           openai_compat.rs + sse.rs
-│       ├── tools/               trait + 注册表 + builtin/
+│       ├── tools/               trait + 注册表 + sandbox.rs + builtin/
 │       ├── agent/               runner / events / cancel / session
 │       ├── storage/             mod.rs + schema.rs
 │       ├── app/                 commands.rs + state.rs
@@ -289,11 +307,11 @@ mini_agent/
 
 | 类别 | 文档 | 份数 |
 | --- | --- | --- |
-| 后端源码 | `src-tauri/src/**/*.md` | 20 |
+| 后端源码 | `src-tauri/src/**/*.md` | 25 |
 | 前端源码 | [`src/README.md`](./src/README.md)（总览）+ 各文件 `.md` | 15 |
-| 根 / 后端配置 / 静态资源 | `index.md`、`package.md`、`tsconfig.md`、`Cargo.md`、`tauri.conf.md`、`.gitignore.md`、`icons/README.md` 等 | 21 |
+| 根 / 后端配置 / 静态资源 | `index.md`、`package.md`、`tsconfig.md`、`Cargo.md`、`tauri.conf.md`、`.gitignore.md`、`.github/workflows/ci.md`、`icons/README.md` 等 | 22 |
 | 复刻指南 | [`docs/handcraft.md`](./docs/handcraft.md) | 1 |
-| **合计** | | **57** |
+| **合计** | | **63** |
 
 统计口径：`git ls-files '*.md'`（即实际入库的文档）。`.codebuddy/skills/` 下的 SKILL.md 属于 IDE 技能数据，不入库也不计入。
 
@@ -338,6 +356,8 @@ mini_agent/
 | SSE 未合并同一事件的多行 `data` | 少数厂商兼容问题 | 按空行切事件再合并 `data` |
 | 未裁剪历史 | 长对话 token 膨胀 | 按 token 预算裁剪或摘要 |
 | 模板残留依赖与图标 | 安装体积、品牌一致性 | 清理 `package.json` 未用包、换自有图标 |
+| 没有 bash 工具 | 模型不能在工作区里跑测试或 git | 留待后续，本轮只做文件工具和 CI |
+| 界面打磨未做完 | 停止后的收尾、工具卡片时序、空状态引导还要再核 | 留待后续的 UX 打磨 |
 
 ---
 

@@ -42,8 +42,6 @@ impl Tool for GetCurrentTime {
     // 执行：不需要参数，直接返回格式化后的当前时间
     async fn execute(&self, _args: serde_json::Value) -> anyhow::Result<String> {
         // 用 chrono 取本地时间并格式化
-        Ok(chrono::Local::now()
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string())
+        Ok(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
     }
 }

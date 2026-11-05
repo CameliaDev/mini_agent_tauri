@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支上有新提交时，取消还在跑的旧任务
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust fmt / clippy / test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # 编译 Tauri 本身就要这些系统库，即使 CI 不打包安装包。
+      # webkit 的包名随 Ubuntu 版本变化，优先 4.1（Tauri 2 的默认）。
+      - name: Install Linux packages required to compile Tauri
+        working-directory: .
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          webkit=""
+          for pkg in libwebkit2gtk-4.1-dev libwebkit2gtk-4.0-dev; do
+            if apt-cache show "$pkg" >/dev/null 2>&1; then
+              webkit="$pkg"
+              break
+            fi
+          done
+          if [ -z "$webkit" ]; then
+            echo "找不到 webkit2gtk 开发包" >&2
+            exit 1
+          fi
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            "$webkit" \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            pkg-config \
+            build-essential
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo fmt
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test
+
+  frontend:
+    name: Frontend tsc / build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # README 要求 Node 20+。CI 用当前 LTS 22。
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: tsc
+        run: npx tsc --noEmit
+
+      # npm run build 会再跑一次 tsc，然后 vite build。
+      # 这里不跑 tauri build：完整打包要 WebView 运行时，类型检查和单测已经够做质量门。
+      - name: vite build
+        run: npm run build

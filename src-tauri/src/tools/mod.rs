@@ -7,6 +7,8 @@ use crate::protocol::{ToolCall, ToolDefinition};
 
 // 声明内置工具子模块，Rust 会去加载 src/tools/builtin/mod.rs
 pub mod builtin;
+// 声明沙箱子模块：工作区根、路径逃逸检查、原子写入
+pub mod sandbox;
 
 // 定义所有工具都要实现的统一接口
 #[async_trait]
@@ -27,17 +29,33 @@ pub struct ToolRegistry {
 
 // 为注册表实现方法
 impl ToolRegistry {
-    // 创建带内置工具的注册表
+    // 用环境变量（或当前目录）决定工作区，注册全部内置工具
     pub fn builtin() -> Self {
+        Self::with_workspace(sandbox::load_workspace_root())
+    }
+
+    // 用调用方给的根目录注册工具。测试传临时目录，应用传 AppState 里的根
+    pub fn with_workspace(root: impl Into<std::path::PathBuf>) -> Self {
+        let root = root.into();
         // 先建一个空表
         let mut tools: HashMap<String, Box<dyn Tool>> = HashMap::new();
-        // 注册「获取当前时间」工具
-        tools.insert(
-            "get_current_time".to_string(),
-            Box::new(builtin::time::GetCurrentTime),
+        // 这两个工具不碰文件，根目录对它们没有意义
+        register(&mut tools, Box::new(builtin::time::GetCurrentTime));
+        register(&mut tools, Box::new(builtin::echo::Echo));
+        // 四个文件工具共用同一个根，整轮对话的沙箱边界才一致
+        register(
+            &mut tools,
+            Box::new(builtin::read::ReadFile::new(root.clone())),
         );
-        // 注册「回显文本」工具
-        tools.insert("echo".to_string(), Box::new(builtin::echo::Echo));
+        register(
+            &mut tools,
+            Box::new(builtin::write::WriteFile::new(root.clone())),
+        );
+        register(
+            &mut tools,
+            Box::new(builtin::edit::EditFile::new(root.clone())),
+        );
+        register(&mut tools, Box::new(builtin::list_dir::ListDir::new(root)));
         // 返回装好工具的注册表
         Self { tools }
     }
@@ -60,5 +78,67 @@ impl ToolRegistry {
             serde_json::from_str(&call.function.arguments).unwrap_or(serde_json::Value::Null);
         // 调用工具自己的执行逻辑
         tool.execute(args).await
+    }
+}
+
+// 用工具自己报的名字当键，避免注册时手写的字符串和 name() 对不上
+fn register(tools: &mut HashMap<String, Box<dyn Tool>>, tool: Box<dyn Tool>) {
+    let name = tool.name().to_string();
+    tools.insert(name, tool);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{ToolCall, ToolCallFunction};
+    use crate::tools::sandbox::TestWorkspace;
+    use std::collections::HashSet;
+
+    #[test]
+    fn registers_builtin_tools() {
+        let ws = TestWorkspace::new();
+        let registry = ToolRegistry::with_workspace(ws.path());
+        let names: HashSet<String> = registry
+            .definitions()
+            .into_iter()
+            .map(|definition| definition.function.name)
+            .collect();
+        for name in [
+            "get_current_time",
+            "echo",
+            "read",
+            "write",
+            "edit",
+            "list_dir",
+        ] {
+            assert!(names.contains(name), "缺少工具 {name}，现有 {names:?}");
+        }
+        let read = registry
+            .definitions()
+            .into_iter()
+            .find(|definition| definition.function.name == "read")
+            .expect("应该有 read");
+        assert_eq!(read.kind, "function");
+        let required = read.function.parameters["required"]
+            .as_array()
+            .expect("required 应该是数组");
+        assert!(required.iter().any(|item| item == "path"));
+    }
+
+    #[tokio::test]
+    async fn executes_read_by_name() {
+        let ws = TestWorkspace::new();
+        ws.write("note.txt", "hello");
+        let registry = ToolRegistry::with_workspace(ws.path());
+        let call = ToolCall {
+            id: "call_1".to_string(),
+            kind: "function".to_string(),
+            function: ToolCallFunction {
+                name: "read".to_string(),
+                arguments: r#"{"path":"note.txt"}"#.to_string(),
+            },
+        };
+        let out = registry.execute(&call).await.expect("read 应该成功");
+        assert_eq!(out, "hello");
     }
 }

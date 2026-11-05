@@ -54,7 +54,14 @@ pub(crate) async fn chat(
         }
     });
     // 3) 真正的活交给 agent 层：它把文字和工具调用一条条推进 tx
-    let result = run_agent(state.config.clone(), tx.clone(), req, cancel).await;
+    let result = run_agent(
+        state.config.clone(),
+        tx.clone(),
+        req,
+        cancel,
+        state.workspace_root.clone(),
+    )
+    .await;
     // 4) 收尾：释放 command 手里的发送端
     // 只有所有 Sender 都被释放，rx 才会收到 None，转发任务也才会结束
     drop(tx);
@@ -99,7 +106,10 @@ pub(crate) async fn load_messages(
     session_id: String,
 ) -> Result<Vec<StoredMessage>, String> {
     // 按会话 id 查消息
-    storage.load_messages(&session_id).await.map_err(|e| e.to_string())
+    storage
+        .load_messages(&session_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // 保存（新建或覆盖）一个会话的元信息
@@ -109,7 +119,10 @@ pub(crate) async fn save_session(
     session: SessionMeta,
 ) -> Result<(), String> {
     // upsert：id 存在就替换，不存在就插入
-    storage.upsert_session(&session).await.map_err(|e| e.to_string())
+    storage
+        .upsert_session(&session)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // 追加一条消息到某个会话
@@ -135,7 +148,10 @@ pub(crate) async fn delete_session(
     session_id: String,
 ) -> Result<(), String> {
     // 删除会话
-    storage.delete_session(&session_id).await.map_err(|e| e.to_string())
+    storage
+        .delete_session(&session_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // 删除某个会话里从某条消息开始的所有消息（重新生成时用）

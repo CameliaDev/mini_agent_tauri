@@ -13,12 +13,16 @@
 | --- | --- |
 | `pub mod time` | 获取当前本地时间，见 [`time.md`](./time.md) |
 | `pub mod echo` | 回显传入文本，见 [`echo.md`](./echo.md) |
+| `pub mod read` | 按行读取工作区文本，见 [`read.md`](./read.md) |
+| `pub mod write` | 原子写入工作区文件，见 [`write.md`](./write.md) |
+| `pub mod edit` | 唯一匹配替换，见 [`edit.md`](./edit.md) |
+| `pub mod list_dir` | 列出一层目录，见 [`list_dir.md`](./list_dir.md) |
 
 ## 依赖关系
 
 - 依赖：无（只有模块声明）。
-- 被谁使用：[`tools/mod.rs`](../mod.md) 的 `ToolRegistry::builtin()` 从这里取具体类型来注册。
+- 被谁使用：[`tools/mod.rs`](../mod.md) 的 `ToolRegistry::with_workspace()` 从这里取具体类型来注册。
 
 ## 当前行为说明
 
-目前只有两个示例级工具，都不涉及文件、网络或系统操作。
+文件工具都要一个工作区根，根的检查在 [`sandbox.rs`](../sandbox.md)，不在这个文件里。这里仍然只做 `mod` 声明。

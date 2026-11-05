@@ -2,11 +2,17 @@
 use crate::providers::{ModelProvider, ProviderConfig};
 // 引入取消令牌：全应用共享一份，「停止生成」命令靠它打断正在跑的请求
 use crate::agent::cancel::CancelToken;
+// 引入工作区根的读取函数：文件工具的沙箱边界在启动时定下来
+use crate::tools::sandbox::load_workspace_root;
+// 工作区根是一个路径
+use std::path::PathBuf;
 
 // 定义应用的共享状态，Tauri 会把它注入到每个 command
 pub struct AppState {
     // 模型服务商配置，含厂商枚举和 API Key
     pub config: ProviderConfig,
+    // 文件工具允许访问的根目录。启动时定死，这一轮进程里不再改
+    pub workspace_root: PathBuf,
     // 取消令牌：chat 命令订阅它，stop 命令触发它
     pub cancel: CancelToken,
 }
@@ -28,6 +34,8 @@ impl AppState {
                 // API Key
                 api_key,
             },
+            // 工作区根：MINI_AGENT_WORKSPACE，否则是当前目录
+            workspace_root: load_workspace_root(),
             // 取消令牌：初始状态是「未取消」
             cancel: CancelToken::new(),
         }

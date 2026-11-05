@@ -3,7 +3,7 @@ use async_trait::async_trait;
 // 引入 Tauri 异步运行时重导出的通道发送端，与 trait 使用同一路径
 use tauri::async_runtime::Sender;
 // 从父模块引入 SSE 解析器、统一接口和服务商配置
-use super::{sse, ChatModel, ProviderConfig};
+use super::{ChatModel, ProviderConfig, sse};
 // 引入统一事件类型
 use crate::agent::events::StreamEvent;
 // 引入请求、响应数据结构

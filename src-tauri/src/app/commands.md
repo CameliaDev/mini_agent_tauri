@@ -19,7 +19,7 @@
 
 1. `chat` 先建容量为 64 的内部通道 `tauri::async_runtime::channel::<StreamEvent>(64)`：`chat_stream` 往 `tx` 推，转发任务从 `rx` 取。
 2. `tokio::spawn` 起一个转发任务，`while let Some(event) = rx.recv().await` 逐条 `on_event.send(event)`；前端页面关闭导致发送失败时忽略，不打断主流程。
-3. 调用 `run_agent(state.config.clone(), tx.clone(), req).await`，主循环只会接触内部 `Sender`，不知道 IPC 通道的存在。
+3. 调用 `run_agent(state.config.clone(), tx.clone(), req, cancel, state.workspace_root.clone()).await`。主循环只会接触内部 `Sender` 和这份已经定好的工作区根，不知道 IPC 通道的存在。
 4. 主循环返回后 `drop(tx)` 释放 command 手里的发送端，`rx` 才会关闭；随后 `await forward` 等剩余事件全部推完。
 5. `result.map_err(|e| e.to_string())` 把 `anyhow` 错误转成前端能显示的字符串。
 

@@ -12,13 +12,13 @@
 
 | 定义 | 签名 |
 | --- | --- |
-| `run_agent` | `pub async fn run_agent(config: ProviderConfig, tx: Sender<StreamEvent>, mut req: ChatRequest) -> anyhow::Result<ChatResponse>` |
+| `run_agent` | `pub async fn run_agent(config: ProviderConfig, tx: Sender<StreamEvent>, mut req: ChatRequest, cancel: CancelSignal, workspace_root: PathBuf) -> anyhow::Result<ChatResponse>` |
 
 ## 逻辑要点
 
-1. 开头创建 `ToolRegistry::builtin()` 与 `create_provider(&config)`，并把 `registry.definitions()` 覆盖写入 `req.tools`，让模型知道有哪些工具可用。
+1. 开头用传入的 `workspace_root` 创建 `ToolRegistry::with_workspace(...)`，再 `create_provider(&config)`，并把 `registry.definitions()` 覆盖写入 `req.tools`。文件工具整轮共用这一个根，循环中途不重读环境变量。
 2. `for _ in 0..10` 是硬上限，防止模型反复点工具导致死循环。
-3. 每轮调用 `provider.chat_stream(&req, tx.clone())`，流式事件通过传入的 `tx` 进入通道；返回值 `ChatResponse` 里带着本轮完整文字、工具调用列表和 `finish_reason`。
+3. 每轮调用 `provider.chat_stream(&req, tx.clone(), cancel.clone())`，流式事件通过传入的 `tx` 进入通道；返回值 `ChatResponse` 里带着本轮完整文字、工具调用列表和 `finish_reason`。
 4. `result.tool_calls.is_empty()` 表示模型给出最终答复：推一个 `StreamEvent::Done`，直接 `return Ok(result)`。
 5. 有工具调用时先用 [`append_assistant`](./session.md) 把助手消息（含 `tool_calls`）追加进历史，然后逐个 `registry.execute(call)`；失败时不中断，把 `工具执行失败: {e}` 当成工具结果文本回灌给模型，让它自己决定下一步。
 6. 每个工具结果用 [`append_tool_result`](./session.md) 追加成 `role = "tool"` 消息，并带上 `tool_call_id`。
