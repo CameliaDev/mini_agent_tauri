@@ -40,11 +40,18 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
+}
+
+/* #root 做成 flex，子级用百分比高度撑满 webview。
+   不要用 100vh：WebKitGTK 里 100vh 有时是整块屏幕，输入框会被摆到窗口外面。 */
+#root {
+  display: flex;
+  min-height: 0;
 }
 
 body {
   min-width: 360px;
-  overflow: hidden;
 }
 
 button {
@@ -55,7 +62,9 @@ button {
 /* ---------- 两栏骨架 ---------- */
 
 .app {
-  height: 100vh;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   overflow: hidden;
   /* 窄屏时侧栏是 absolute 抽屉，以 .app 为定位基准 */
@@ -65,8 +74,11 @@ button {
 .main {
   flex: 1;
   min-width: 0;
+  /* 列方向也要能收缩，否则消息变高时会把整列撑出 webview */
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--panel);
 }
 
@@ -79,8 +91,9 @@ button {
   flex-direction: column;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
-  /* 宽屏用 margin 收起，窄屏用 transform 收起，两种都做过渡 */
-  transition: margin-left 0.18s ease, transform 0.18s ease;
+  /* 宽屏用 margin 收起，窄屏用 left 收起。不要用 transform：
+     WebKitGTK 会把合成层里的 textarea 画到屏幕左上角。 */
+  transition: margin-left 0.18s ease, left 0.18s ease;
 }
 
 .app--collapsed .sidebar {
@@ -308,6 +321,10 @@ button {
   /* flex 子项默认 min-width:auto，内容过宽会撑破容器；
      改成 0 才允许它收缩，横向滚动交给内部的 .messages */
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* 消息再高也不能画到输入框外面，更不能把输入框顶出窗口 */
+  overflow: hidden;
 }
 
 /* 上下边缘渐隐，提示上面还有内容（参考 shadcn 的 scroll-fade） */
@@ -333,9 +350,11 @@ button {
 }
 
 .messages {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  /* 用 max-width 限制阅读宽度；width:100% 保证不满屏时也能居中 */
+  /* 用 max-width 限制阅读宽度；width:100% 保证不满屏时也能居中。
+     不用 height:100%：父级高度不确定时百分比会失效，把整列撑高。 */
   width: 100%;
   max-width: 780px;
   margin: 0 auto;
@@ -488,27 +507,21 @@ button {
 
 /* ---------- 流式提示 ---------- */
 
-/* 等待首个字符：微光文字 */
+/* 等待首个字符：只做透明度呼吸。
+   不要用 background-clip: text。WebKitGTK 会为它建合成层，
+   发送后原生 textarea 会被画到屏幕坐标 (0, 0)。 */
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--muted) 0%,
-    var(--text) 50%,
-    var(--muted) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: shimmer 1.4s linear infinite;
+  color: var(--muted);
+  animation: shimmer-fade 1.4s ease-in-out infinite;
 }
 
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
+@keyframes shimmer-fade {
+  0%,
+  100% {
+    opacity: 0.45;
   }
-  to {
-    background-position: -200% 0;
+  50% {
+    opacity: 1;
   }
 }
 
@@ -563,12 +576,11 @@ button {
   border-radius: var(--radius);
   background: var(--panel);
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 .empty__card:hover {
   border-color: var(--border-strong);
-  transform: translateY(-1px);
 }
 
 .empty__card-title {
@@ -583,12 +595,18 @@ button {
 
 /* ---------- 底部输入区 ---------- */
 
+/* 必须留在 .main 的文档流里，钉在列的底部。
+   不要给它或它的 form 加 position:fixed/absolute，否则 WebKitGTK 会按屏幕坐标摆。 */
 .composer {
+  position: relative;
   flex: none;
+  width: 100%;
+  z-index: 2;
   padding: 10px 24px 18px;
 }
 
 .composer__box {
+  position: relative;
   max-width: 780px;
   margin: 0 auto;
   border: 1px solid var(--border);
@@ -693,10 +711,11 @@ button {
     box-shadow: 0 0 24px rgba(0, 0, 0, 0.12);
   }
 
-  /* 抽屉收起：整体移出屏幕。用 transform 而不是 margin-left，
-     因为 absolute 元素已经脱离 flex 流，margin 不会让主区补上这块宽度 */
+  /* 抽屉收起：用 left 移出，不用 transform。
+     absolute 元素已经脱离 flex 流，负 margin 不会把主区拉回来；
+     transform 则会让 WebKitGTK 把输入框画到屏幕左上角。 */
   .app--collapsed .sidebar {
-    transform: translateX(-100%);
+    left: -248px;
     margin-left: 0;
   }
 
