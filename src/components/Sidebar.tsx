@@ -1,5 +1,6 @@
 // 左侧会话栏：新建对话 + 会话列表（按今天 / 昨天 / 更早分组）
-import { useMemo } from "react";
+// 底部是本地用户和设置入口。没有账号系统，设置只展示模型、工作区和密钥该写在哪
+import { useEffect, useMemo, useState } from "react";
 import { groupOf, useChatStore } from "../store";
 import type { Session } from "../store";
 // 引入持久化层的三个函数：切换时读消息、删除时删库、新建时落库
@@ -11,6 +12,17 @@ export function Sidebar() {
   const newSession = useChatStore((s) => s.newSession);
   const selectSession = useChatStore((s) => s.selectSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
+  // 设置面板开着时盖在会话列表下沿，不另开窗口
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setSettingsOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [settingsOpen]);
 
   // 切换会话：先切内存，再从数据库把消息读回来
   // 顺序很重要：先切，loadMessagesOf 才知道往哪个会话里填
@@ -94,9 +106,55 @@ export function Sidebar() {
       </nav>
 
       <footer className="sidebar__foot">
-        <span className="sidebar__status" aria-hidden="true" />
-        DeepSeek · deepseek-chat
+        {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+        <button
+          type="button"
+          className="sidebar__account"
+          aria-expanded={settingsOpen}
+          aria-label="本地用户"
+          onClick={() => setSettingsOpen((open) => !open)}
+        >
+          <span className="sidebar__avatar" aria-hidden="true">
+            本
+          </span>
+          <span className="sidebar__account-name">本地用户</span>
+        </button>
+        <button
+          type="button"
+          className="sidebar__settings"
+          aria-expanded={settingsOpen}
+          onClick={() => setSettingsOpen((open) => !open)}
+        >
+          设置
+        </button>
       </footer>
     </aside>
+  );
+}
+
+// 设置面板：模型名、工作区从哪来、密钥写在哪个文件。不能在这里改，改了也要重启
+function SettingsPanel({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="settings" role="dialog" aria-label="设置">
+      <div className="settings__title">设置</div>
+      <p className="settings__row">
+        <span>用户</span>
+        本地用户，没有登录
+      </p>
+      <p className="settings__row">
+        <span>模型</span>
+        DeepSeek · deepseek-chat
+      </p>
+      <p className="settings__hint">
+        工作区是文件工具和 bash 的根目录。用环境变量 MINI_AGENT_WORKSPACE
+        指定；不设的话，就是应用启动时的当前目录。
+      </p>
+      <p className="settings__hint">
+        密钥写在项目根目录的 .env 里：DEEPSEEK_API_KEY=你的密钥。改完需要重启应用。
+      </p>
+      <button type="button" className="settings__close" onClick={onClose}>
+        关闭
+      </button>
+    </div>
   );
 }

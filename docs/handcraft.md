@@ -122,9 +122,26 @@ pub trait Tool: Send + Sync {
 
 注册表负责三件事：收集说明书（发给模型）、按名字找到工具、把 JSON 参数解析后执行。
 
-每个工具单独放一个文件（`tools/builtin/time.rs`），注册表里只留两行注册代码。加新工具时不用碰别的文件。
+每个工具单独放一个文件（`tools/builtin/time.rs`）。接进注册表时只动两处很小的登记：`builtin/mod.rs` 声明模块，`ToolRegistry` 里按 `name()` 插入。工具自己的逻辑不要写进注册表。
 
 **验证**：写一个测试或临时打印 `registry.definitions()`，确认 JSON 里有 `type: "function"`、`name`、`parameters`。
+
+### 当前仓库里的文件工具
+
+上面是「先做一个工具」的最小步骤。仓库现在另外还有四个真正碰文件的工具，和 `get_current_time`、`echo` 登记在同一张表里：
+
+| 工具 | 作用 |
+| --- | --- |
+| `read` | 按行读文本。`offset` 从 1 开始，`limit` 默认 400 行；超出字节上限会截断，并告诉模型下一次从哪一行继续 |
+| `write` | 覆盖写入。先写同目录临时文件，再 `rename` 替换，避免写到一半留下半截文件。父目录必须已经存在 |
+| `edit` | 把唯一的一段 `old_string` 换成 `new_string`。找不到、或找到多处，都报错并且不改文件 |
+| `list_dir` | 只列一层。跳过名为 `node_modules`、`target`、`.git` 的目录；路径中间经过它们也会拒绝 |
+
+路径一律先过 `src-tauri/src/tools/sandbox.rs` 的 `resolve_inside`：相对路径拼到工作区根上，`..` 和绝对路径归一化之后如果还在根外面，就直接拒绝。指向外部的符号链接同样拒绝。根目录来自环境变量 `MINI_AGENT_WORKSPACE`，不设就用进程启动时的当前目录，记在 `AppState.workspace_root` 里，由 `run_agent` 传给 `ToolRegistry::with_workspace_and_cancel`。同一份取消信号也从这里传进去。
+
+沙箱挡的是「逃出工作区」，不是「隐藏工作区里的密钥」。`.env` 如果放在工作区根下，模型可以用 `read` 读到它。
+
+同一张注册表里还有 `bash`。它没有 `cwd` 参数，当前目录固定是工作区根。Unix 上实际跑的是 `sh -c`，Windows 上是 `cmd /C`。默认 30 秒超时，最长 120 秒；stdout 和 stderr 各只保留前 16 KiB。`rm -rf /`、格式化磁盘、关机会在启动前被拒绝。用户点「停止」时，这条命令的子进程会被杀掉（Unix 杀进程组，Windows 用 `taskkill /T`）。这是按空白分词的黑名单，不是沙箱。
 
 ## 第 5 步：把「模型 → 工具 → 模型」接成闭环
 
@@ -382,7 +399,7 @@ let chunk = tokio::select! {
 };
 ```
 
-被取消时：**保留已经收到的半截文字**，推一个 `Cancelled` 事件给前端，前端把「生成中」收掉。
+被取消时：**保留已经收到的半截文字**，推一个 `Cancelled` 事件给前端，前端把这条回复标成「已停止」。
 
 ### 10.4 顺序：先 `reset` 再 `subscribe`
 
@@ -458,6 +475,7 @@ await runAgent(history, sessionId);
 | 前端传 `on_event` 没反应 | 参数名不对 | 前端改成 `onEvent`（camelCase） |
 | 中文变成 `�` | 一个汉字被网络分包切开 | 用字节缓冲按 `\n` 切行，再整行 `from_utf8` |
 | 模型点了工具但界面没反应 | 前端没处理 `ToolCalls` 事件 | 在 `ipc/chat.ts` 里补上这个分支 |
+| 文件工具报「路径逃出工作区」 | `path` 带了 `..`、绝对路径跑到根外面，或符号链接指向外部 | 改用工作区里的相对路径；根目录用 `MINI_AGENT_WORKSPACE` |
 | 点「停止」没反应 | `watch::Sender::send` 在没有接收端时不更新值 | 改用 `send_replace`，并写个测试锁住 |
 | 刷新后对话没了 | 没做持久化 | 检查 `setup` 里有没有 `manage(storage)`、前端有没有调 `persistSession` |
 | 界面横向溢出 | flex 子项默认 `min-width: auto` | 给滚动容器加 `min-width: 0` |
@@ -465,11 +483,13 @@ await runAgent(history, sessionId);
 
 ## 复刻完成检查清单
 
-- [ ] `cd src-tauri && cargo test` 有测试通过（应该 ≥ 17 个）
+- [ ] `cd src-tauri && cargo test` 有测试通过（当前仓库是 49 个：SSE、取消、存储、沙箱与文件工具、bash）
+- [ ] `.github/workflows/ci.yml` 会在 PR 上跑 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`，以及 `npm ci`、`npx tsc --noEmit`、`npm run build`（不打包 Tauri 安装包）
 - [ ] 刷新页面后对话还在
 - [ ] 点「停止」能打断生成，且已收到的半截文字保留
 - [ ] 点「重新生成」不会出现重复的用户消息
-- [ ] `cargo clippy --offline --lib --bins --no-deps` 无警告
+- [ ] `cargo clippy --all-targets -- -D warnings` 无警告
+- [ ] `cargo fmt --check` 通过
 - [ ] `npx tsc --noEmit` 通过
 - [ ] 窗口里能逐字看到模型回复
 - [ ] 模型点工具时能看到工具卡片，工具结果能被它继续引用

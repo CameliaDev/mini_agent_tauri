@@ -20,7 +20,7 @@
 pub mod schema;
 
 // 引入 rusqlite 的参数绑定宏与连接类型
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 // 引入 tokio 的互斥锁：SQLite 连接是 !Sync 的，用锁保证同一时刻只有一个任务在用
 use tokio::sync::Mutex;
 // 引入 Arc：让整个存储句柄可以被廉价克隆（多个命令共享同一个连接）
@@ -209,11 +209,7 @@ impl Storage {
     }
 
     // 删除某一条消息（重新生成时要把旧回复删掉）
-    pub async fn delete_message(
-        &self,
-        session_id: &str,
-        message_id: &str,
-    ) -> anyhow::Result<()> {
+    pub async fn delete_message(&self, session_id: &str, message_id: &str) -> anyhow::Result<()> {
         // 拿锁
         let conn = self.conn.lock().await;
         // 按 id 删；带上 session_id 是为了防止误删别的会话的消息

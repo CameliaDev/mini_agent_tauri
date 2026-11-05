@@ -9,6 +9,8 @@
 
 // 引入 Tauri 异步运行时重导出的通道发送端
 use tauri::async_runtime::Sender;
+// 工作区根要交给工具注册表，整轮循环共用一个沙箱
+use std::path::PathBuf;
 // 引入流式事件枚举
 use crate::agent::events::StreamEvent;
 // 引入会话历史追加函数
@@ -16,7 +18,7 @@ use crate::agent::session::{append_assistant, append_tool_result};
 // 引入聊天请求、响应数据结构
 use crate::protocol::{ChatRequest, ChatResponse};
 // 引入模型适配器工厂与服务商配置
-use crate::providers::{create_provider, ProviderConfig};
+use crate::providers::{ProviderConfig, create_provider};
 // 引入工具注册表
 use crate::tools::ToolRegistry;
 // 引入取消信号
@@ -32,10 +34,12 @@ pub async fn run_agent(
     mut req: ChatRequest,
     // 取消信号：用户点「停止生成」后，每轮开始前都会检查它
     cancel: CancelSignal,
+    // 文件工具的工作区根。由 AppState 在启动时定好，不在循环里重读环境变量
+    workspace_root: PathBuf,
 ) -> anyhow::Result<ChatResponse> {
     // 1) 准备两样东西：工具注册表（菜单）和模型适配器（跑腿的）
-    // 创建内置工具注册表
-    let registry = ToolRegistry::builtin();
+    // 文件工具和 bash 都绑在同一个根上。取消信号交给 bash，停止时才能杀掉子进程
+    let registry = ToolRegistry::with_workspace_and_cancel(workspace_root, Some(cancel.clone()));
     // 按配置创建对应的模型适配器
     let provider = create_provider(&config);
     // 把工具清单（菜单）注入请求，模型才知道有哪些工具可用
@@ -64,7 +68,9 @@ pub async fn run_agent(
         // 发起一轮模型请求，流式事件会经 tx -> rx -> 前端
         // 这一句是整个流程里唯一真正「说话」的地方，文字和工具调用都在这里产生
         // cancel 传下去：网络读取过程中也能被用户打断
-        let result = provider.chat_stream(&req, tx.clone(), cancel.clone()).await?;
+        let result = provider
+            .chat_stream(&req, tx.clone(), cancel.clone())
+            .await?;
 
         // 3) 分两种结局：模型要工具，或者模型给最终答案
         // 没有工具调用说明模型已经给出最终答复，可以收工
@@ -103,6 +109,17 @@ pub async fn run_agent(
                 .execute(call)
                 .await
                 .unwrap_or_else(|e| format!("工具执行失败: {}", e));
+            // 先告诉界面这张卡片跑完了。失败也是一条结果，卡片上标成错误
+            let _ = tx
+                .send(StreamEvent::ToolResult(
+                    crate::agent::events::ToolResultEvent {
+                        call_id: call.id.clone(),
+                        name: call.function.name.clone(),
+                        output: output.clone(),
+                        is_error: output.starts_with("工具执行失败"),
+                    },
+                ))
+                .await;
             // 把工具结果作为一条 role=tool 的消息追加进历史
             // tool_call_id 必填，它是模型把结果和刚才那次调用对起来的唯一凭据
             append_tool_result(&mut req.messages, call, output);

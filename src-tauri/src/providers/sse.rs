@@ -113,7 +113,9 @@ fn parse_tool_call_delta(item: &serde_json::Value) -> Option<ToolCallDelta> {
         // 工具名
         name: item["function"]["name"].as_str().map(|s| s.to_string()),
         // 参数片段
-        arguments: item["function"]["arguments"].as_str().map(|s| s.to_string()),
+        arguments: item["function"]["arguments"]
+            .as_str()
+            .map(|s| s.to_string()),
     })
 }
 
@@ -303,7 +305,11 @@ pub async fn parse_response(
     // 如果累积到了工具调用，先通过通道推给上层
     if !pending_calls.is_empty() {
         // 推 ToolCalls 事件，上层拿到后去执行工具并发起下一轮
-        if tx.send(StreamEvent::ToolCalls(pending_calls.clone())).await.is_err() {
+        if tx
+            .send(StreamEvent::ToolCalls(pending_calls.clone()))
+            .await
+            .is_err()
+        {
             // 接收端已关闭，不静默吞掉，直接报错
             return Err(anyhow::anyhow!("流式通道已关闭"));
         }

@@ -35,7 +35,7 @@
 
 | 平台 | 需要 |
 | --- | --- |
-| 通用 | Node.js 20+、Rust stable、npm |
+| 通用 | Node.js 20+、Rust stable（edition 2024，需要 1.85+）、npm |
 | Windows | MSVC 生成工具、WebView2 Runtime |
 | macOS | Xcode Command Line Tools |
 | Linux | `webkit2gtk-4.1`、`libayatana-appindicator3` 等 Tauri 系统依赖 |
@@ -72,8 +72,9 @@ npm run tauri dev
 | `npm run tauri dev` | 日常开发 |
 | `npm run tauri build` | 打包安装包 |
 | `cd src-tauri && cargo check` | 后端类型检查 |
-| `cd src-tauri && cargo test` | 后端单元测试（17 个） |
-| `cd src-tauri && cargo clippy --offline --lib --bins --no-deps` | 后端 lint |
+| `cd src-tauri && cargo test` | 后端单元测试（49 个） |
+| `cd src-tauri && cargo fmt --check` | 后端格式，与 CI 相同 |
+| `cd src-tauri && cargo clippy --all-targets -- -D warnings` | 后端 lint，与 CI 相同 |
 | `npx tsc --noEmit` | 前端类型检查 |
 
 ---
@@ -144,20 +145,21 @@ npm run tauri dev
 | 9 | 会话落 SQLite（后端）而非 `localStorage` | 事务性写入、结构化查询、数据随应用数据目录走 | 每次落库逐条 IPC，消息多时偏慢 |
 | 10 | `INSERT OR REPLACE` + 消息 id 主键 | 重试/重落库不会产生重复行，前端不用维护「哪些是新的」 | 无批量事务 |
 | 11 | 滚动锚定 `useStickToBottom` | 用户上翻时不能被硬拽回底部；不贴底时给「回到底部」 | 阈值 80px 是经验值 |
-| 12 | 助手消息无气泡 + 工具用 Marker 行 | 对标成熟桌面 AI 客户端的长文可读性 | 与「所有消息都是气泡」的直觉不同 |
+| 12 | 助手消息无气泡 + 工具用可折叠卡片 | 对标成熟桌面 AI 客户端的长文可读性；输出默认收起 | 与「所有消息都是气泡」的直觉不同 |
 | 13 | 深色模式只覆盖 CSS 变量 | 新增组件不用考虑配色分支 | 个别硬编码颜色需单独覆盖 |
 
 ### 2.3 质量门禁
 
 | 检查 | 命令 | 当前状态 |
 | --- | --- | --- |
-| 后端单元测试 | `cd src-tauri && cargo test` | **17 passed**（SSE 6 / 取消 4 / 存储 7） |
-| 后端 lint | `cargo clippy --offline --lib --bins --no-deps` | 无警告 |
+| 后端单元测试 | `cd src-tauri && cargo test` | **49 passed**（SSE 6 / 取消 4 / 存储 7 / 沙箱与文件工具 24 / bash 8） |
+| 后端格式 | `cd src-tauri && cargo fmt --check` | 通过 |
+| 后端 lint | `cargo clippy --all-targets -- -D warnings` | 无警告 |
 | 前端类型 | `npx tsc --noEmit` | 通过 |
 | 前端构建 | `npm run build` | 通过 |
-| 文档链接 | 扫描全部 `.md` 相对链接 | 零断链 |
+| CI | [`.github/workflows/ci.yml`](./.github/workflows/ci.md) | PR 与 `main` 上跑上面这几项，不打包 Tauri 安装包 |
 
-测试刻意集中在三类「最容易悄悄坏掉」的地方：SSE 分片解析、取消信号语义、SQLite 读写与级联删除。`cargo test` 用内存库，不需要任何外部服务或 API Key。
+测试刻意集中在五类「最容易悄悄坏掉」的地方：SSE 分片解析、取消信号语义、SQLite 读写与级联删除、工作区沙箱（路径逃逸、截断、唯一匹配）、bash（危险命令护栏、超时、输出截断、取消时杀进程）。`cargo test` 不需要任何外部服务或 API Key。文件工具和 bash 的测试用临时目录，不碰仓库里的文件。
 
 ### 2.4 安全与密钥
 
@@ -166,7 +168,10 @@ npm run tauri dev
 | API Key | 只放 `.env`；`.gitignore` 排除 `.env` / `.env.*`，仅放行不含真实值的 `.env.example` |
 | SQL 注入 | 所有 SQL 用 `params![]` 绑定，不拼接字符串 |
 | XSS | `react-markdown` 默认转义 HTML，模型输出里的 `<script>` 只显示为文本 |
-| IPC 权限 | `capabilities/default.json` 只给 `core:default` + `opener:default`，无文件系统 / shell 权限 |
+| IPC 权限 | `capabilities/default.json` 只给 `core:default` + `opener:default`。窗口没有 Tauri 文件系统 / shell 权限 |
+| 文件工具沙箱 | `read` / `write` / `edit` / `list_dir` 走 Rust `std::fs`，只允许访问 `AppState.workspace_root`。`..`、根外绝对路径、指向外部的符号链接都会拒绝 |
+| bash | 在工作区根目录起一个子进程，不是 Tauri 的 shell 插件。粗黑名单拒绝 `rm -rf /`、格式化磁盘和关机。`cd /` 之后的破坏拦不住。子进程环境里会去掉 `DEEPSEEK_API_KEY` 和 `MINI_AGENT_API_KEY` |
+| 工作区内的密钥 | 沙箱不隐藏根目录里面的文件。`.env` 如果放在工作区里，模型可以用 `read` 读到。把 `MINI_AGENT_WORKSPACE` 指到不含密钥的目录，或不要把密钥放进工作区 |
 | 密钥读取 | 后端 `app/state.rs` 通过 `dotenvy` 注入 `AppState`，前端永远拿不到 Key |
 | 数据库位置 | 系统应用数据目录（`%APPDATA%/<应用名>/mini_agent.db`），不在仓库里 |
 
@@ -178,6 +183,20 @@ npm run tauri dev
 - 前端 `invoke` 的 reject 变成顶部错误条，不只在控制台里报错。
 - 工具执行失败**不中断循环**：把错误文本当成工具结果回给模型，让它自己换策略。
 - 流式通道关闭、SSE 坏帧、401、轮数超限都有明确去向；空助手气泡在 `finish` / `fail` 里被清掉。
+
+### 2.6 内置工具
+
+| 工具 | 作用 |
+| --- | --- |
+| `get_current_time` | 当前本地时间，无参数 |
+| `echo` | 把传入文本原样返回，用来验证带参数的工具调用 |
+| `read` | 按行读工作区里的 UTF-8 文本。`offset` 从 1 开始，`limit` 默认 400 行，超限会截断并告诉模型下一行 |
+| `write` | 覆盖写入。先写同目录临时文件，再 `rename` 替换。父目录必须已经存在 |
+| `edit` | 把唯一的一段 `old_string` 换成 `new_string`。找不到或找到多处都报错，并且不改文件 |
+| `list_dir` | 只列一层。跳过名为 `node_modules`、`target`、`.git` 的目录，路径中间经过它们也会拒绝 |
+| `bash` | 在工作区根目录执行一条命令。Unix 是 `sh -c`，Windows 是 `cmd /C`。默认 30 秒超时，最长 120 秒；stdout / stderr 各保留 16 KiB。危险命令会在启动前拒绝，用户点停止时杀掉子进程 |
+
+工作区根来自 `MINI_AGENT_WORKSPACE`，不设则是进程启动时的当前目录，记在 `AppState.workspace_root` 里。细节在 [`src-tauri/src/tools/sandbox.md`](./src-tauri/src/tools/sandbox.md) 和 [`src-tauri/src/tools/builtin/bash.md`](./src-tauri/src/tools/builtin/bash.md)。
 
 ---
 
@@ -220,7 +239,7 @@ Composer → sendMessage(text)
        ├─ 两级通道：agent 推内部 mpsc → 转发任务推 Tauri Channel → 前端
        ├─ agent::run_agent 循环：chat_stream → 有工具就执行并回填历史 → 再问
        └─ sse::parse_response 用 select! 同时等「来数据」和「被取消」
-  5. 事件翻译：TextDelta→appendDelta / ToolCalls→addToolCards / Done|Cancelled→finish
+  5. 事件翻译：TextDelta→appendDelta / ToolCalls→addToolCards / ToolResult→completeTool / Done→finish / Cancelled→markStopped
   6. invoke resolve/reject → finish / fail 兜底
   7. finally → persistSession(sessionId) 落库（成功/失败/取消都写）
 ```
@@ -253,6 +272,7 @@ mini_agent/
 ├── index.html / package.json / vite.config.ts / tsconfig*.json
 ├── .env.example                 ← 密钥模板（入库）；.env 不入库
 ├── .gitignore
+├── .github/workflows/ci.yml     CI：fmt / clippy / test，以及 tsc / vite build
 ├── src/                         前端
 │   ├── types.ts                 前后端共用的数据结构
 │   ├── store.ts                 唯一状态仓库：会话 + 消息
@@ -267,7 +287,7 @@ mini_agent/
 │   └── src/
 │       ├── protocol.rs          契约层
 │       ├── providers/           openai_compat.rs + sse.rs
-│       ├── tools/               trait + 注册表 + builtin/
+│       ├── tools/               trait + 注册表 + sandbox.rs + builtin/
 │       ├── agent/               runner / events / cancel / session
 │       ├── storage/             mod.rs + schema.rs
 │       ├── app/                 commands.rs + state.rs
@@ -289,11 +309,11 @@ mini_agent/
 
 | 类别 | 文档 | 份数 |
 | --- | --- | --- |
-| 后端源码 | `src-tauri/src/**/*.md` | 20 |
+| 后端源码 | `src-tauri/src/**/*.md` | 26 |
 | 前端源码 | [`src/README.md`](./src/README.md)（总览）+ 各文件 `.md` | 15 |
-| 根 / 后端配置 / 静态资源 | `index.md`、`package.md`、`tsconfig.md`、`Cargo.md`、`tauri.conf.md`、`.gitignore.md`、`icons/README.md` 等 | 21 |
+| 根 / 后端配置 / 静态资源 | `index.md`、`package.md`、`tsconfig.md`、`Cargo.md`、`tauri.conf.md`、`.gitignore.md`、`.github/workflows/ci.md`、`icons/README.md` 等 | 22 |
 | 复刻指南 | [`docs/handcraft.md`](./docs/handcraft.md) | 1 |
-| **合计** | | **57** |
+| **合计** | | **64** |
 
 统计口径：`git ls-files '*.md'`（即实际入库的文档）。`.codebuddy/skills/` 下的 SKILL.md 属于 IDE 技能数据，不入库也不计入。
 
@@ -333,11 +353,12 @@ mini_agent/
 | `identifier` 为模板默认 | 不能正式发布 | 改成自有域名反写 |
 | 每次落库逐条 `append_message` | 长对话 IPC 次数多 | 改批量事务 / 只增量写新消息 |
 | 不支持会话重命名 | 标题自动取首条消息前 24 字 | 加右键重命名 + `save_session` 更新 |
-| 工具执行结果界面不可见 | 只显示「模型点了哪个工具」 | 新增 ToolResult 事件与展示 |
 | 单令牌、同时只能一轮生成 | 不能并发多会话生成 | 改成按会话 id 持有令牌 |
 | SSE 未合并同一事件的多行 `data` | 少数厂商兼容问题 | 按空行切事件再合并 `data` |
 | 未裁剪历史 | 长对话 token 膨胀 | 按 token 预算裁剪或摘要 |
 | 模板残留依赖与图标 | 安装体积、品牌一致性 | 清理 `package.json` 未用包、换自有图标 |
+| bash 不是沙箱 | 黑名单按空白分词，挡不住 `cd /` 之后的破坏；`echo "rm -rf /"` 这种无害句子会被误伤 | 真要隔离再上容器或系统调用过滤 |
+| 助手阶段不落库 | 重新打开会话后，「已停止 / 生成失败」只剩正文 | 真要保留再加列；现在按正文能否看出失败的只有工具卡片 |
 
 ---
 

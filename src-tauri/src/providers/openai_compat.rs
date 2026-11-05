@@ -3,7 +3,7 @@ use async_trait::async_trait;
 // 引入 Tauri 异步运行时重导出的通道发送端，与 trait 使用同一路径
 use tauri::async_runtime::Sender;
 // 从父模块引入 SSE 解析器、统一接口和服务商配置
-use super::{sse, ChatModel, ProviderConfig};
+use super::{ChatModel, ProviderConfig, sse};
 // 引入统一事件类型
 use crate::agent::events::StreamEvent;
 // 引入请求、响应数据结构
@@ -74,6 +74,10 @@ impl ChatModel for OpenAiCompatProvider {
                 .unwrap()
                 // 把工具清单（菜单）写进请求体
                 .insert("tools".to_string(), serde_json::json!(&req.tools));
+        }
+        // 空密钥不必打到网络上。前端会把这句话换成可读的中文提示
+        if self.api_key.trim().is_empty() {
+            anyhow::bail!("缺少 API Key：请在项目根目录的 .env 里设置 DEEPSEEK_API_KEY 后重启");
         }
         // 发起 POST 请求并等待响应头回来
         let resp = self

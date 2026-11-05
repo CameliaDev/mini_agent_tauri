@@ -12,7 +12,7 @@
 
 | 定义 | 作用 |
 | --- | --- |
-| `pub struct AppState` | Tauri 注入到每个 command 的共享状态：`config`（配置与密钥）+ `cancel`（取消令牌） |
+| `pub struct AppState` | Tauri 注入到每个 command 的共享状态：`config`（配置与密钥）+ `workspace_root`（文件工具的根）+ `cancel`（取消令牌） |
 | `impl AppState::from_env()` | 从环境变量装配配置的构造函数 |
 
 ## 逻辑要点
@@ -20,16 +20,18 @@
 1. `dotenvy::dotenv()` 尝试从当前工作目录向上找 `.env` 并加载，失败也不影响启动（返回值被忽略）。
 2. API Key 优先读 `DEEPSEEK_API_KEY`，读不到再读 `MINI_AGENT_API_KEY`，都没有就用 `unwrap_or_default()` 得到空字符串。
 3. `provider` 固定为 `ModelProvider::DeepSeek`，`base_url()` 会解析成 `https://api.deepseek.com`。
-4. [`lib.rs`](../lib.md) 用 `.manage(AppState::from_env())` 注册状态；[`commands.rs`](./commands.md) 用 `tauri::State<'_, AppState>` 取出 `config.clone()`。
+4. [`lib.rs`](../lib.md) 用 `.manage(AppState::from_env())` 注册状态；[`commands.rs`](./commands.md) 用 `tauri::State<'_, AppState>` 取出 `config.clone()` 和 `workspace_root.clone()`。
 5. `cancel` 是全应用共享的一份 [`CancelToken`](../agent/cancel.md)：`chat` 命令订阅它，`stop_generation` 命令触发它。
+6. `workspace_root` 在 `dotenvy::dotenv()` 之后调用 [`load_workspace_root()`](../tools/sandbox.md)。优先 `MINI_AGENT_WORKSPACE`，否则是启动时的当前目录。能 `canonicalize` 就存绝对路径，这一轮进程里不再改。
 
 ## 依赖关系
 
-- 依赖：[`providers`](../providers/mod.md) 的 `ModelProvider`、`ProviderConfig`，[`agent/cancel.rs`](../agent/cancel.md) 的 `CancelToken`，以及 `dotenvy`。
+- 依赖：[`providers`](../providers/mod.md) 的 `ModelProvider`、`ProviderConfig`，[`agent/cancel.rs`](../agent/cancel.md) 的 `CancelToken`，[`tools/sandbox.rs`](../tools/sandbox.md) 的 `load_workspace_root`，以及 `dotenvy`。
 - 被谁使用：[`lib.rs`](../lib.md)、[`app/commands.rs`](./commands.md)。
 
 ## 当前行为说明
 
 - `ModelProvider` 还定义了 `OpenAi`、`Qwen` 两个变体，但这里写死 `DeepSeek`，所以那两个分支目前不可达。
 - API Key 为空时不会在启动阶段报错，仍会带着空 Bearer 令牌发请求。
-- 打包后进程的当前工作目录不一定等于项目根目录，`.env` 的查找位置由运行时 cwd 决定。
+- 打包后进程的当前工作目录不一定等于项目根目录，`.env` 的查找位置由运行时 cwd 决定。文件工具的根也是如此：没设 `MINI_AGENT_WORKSPACE` 时，用的就是启动时的 cwd。
+- 根目录不存在时应用仍然能启动，`workspace_root` 先存原始字符串；真正调用文件工具时才报「工作区根目录不存在」。

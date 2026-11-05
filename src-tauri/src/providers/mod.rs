@@ -68,7 +68,7 @@ pub trait ChatModel: Send + Sync {
         tx: Sender<StreamEvent>,
         // 取消信号：用户点「停止生成」时，靠它打断正在进行的网络读取
         cancel: CancelSignal,
-    // 返回完整结果或错误
+        // 返回完整结果或错误
     ) -> anyhow::Result<ChatResponse>;
 }
 
