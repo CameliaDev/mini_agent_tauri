@@ -13,7 +13,8 @@
 | --- | --- |
 | 配色 | `:root` 里的 CSS 变量；深色模式在 `@media (prefers-color-scheme: dark)` 里覆盖同一批变量 |
 | 两栏骨架 | `.app`、`.app--collapsed`、`.main` |
-| 会话栏 | `.sidebar`、`.sidebar__new`、`.sidebar__group-title`、`.sidebar__row`、`.sidebar__item`、`.sidebar__del`、`.sidebar__foot` |
+| 会话栏 | `.sidebar`、`.sidebar__new`、`.sidebar__group-title`、`.sidebar__row`、`.sidebar__item`、`.sidebar__del`、`.sidebar__foot`、`.sidebar__account`、`.sidebar__settings` |
+| 设置面板 | `.settings`、`.settings__row`、`.settings__hint`、`.settings__close`（绝对定位在底栏上方，不用 `fixed` / `transform`） |
 | 顶栏 | `.topbar`、`.topbar__toggle`、`.topbar__meta`、`.topbar__action` |
 | 错误条 | `.banner`、`.banner__text` |
 | 消息区 | `.messages-wrap`（上下渐隐）、`.messages`、`.msg`、`.msg__avatar`、`.msg__body`、`.bubble--user` |

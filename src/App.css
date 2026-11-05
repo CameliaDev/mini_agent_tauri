@@ -204,20 +204,119 @@ button {
 }
 
 .sidebar__foot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar__account,
+.sidebar__settings {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
   font-size: 12px;
+  cursor: pointer;
+}
+
+.sidebar__account {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.sidebar__settings {
+  flex: none;
+  padding: 6px 8px;
   color: var(--muted);
 }
 
-.sidebar__status {
-  width: 7px;
-  height: 7px;
+.sidebar__account:hover,
+.sidebar__settings:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.sidebar__avatar {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
-  background: #2ea043;
+  background: var(--accent-soft);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sidebar__account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 贴在底栏上方，留在侧栏里。不要 position:fixed，也不要 transform。 */
+.settings {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  z-index: 2;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings__title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings__row {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.settings__row span {
+  flex: none;
+  width: 2.5em;
+  color: var(--muted);
+}
+
+.settings__hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.settings__close {
+  margin-top: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__close:hover {
+  border-color: var(--accent);
 }
 
 /* ---------- 顶部栏 ---------- */
