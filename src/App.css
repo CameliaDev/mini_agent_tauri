@@ -1,0 +1,801 @@
+/* ==========================================================================
+   界面样式：布局参考 Chatbox / NextChat 的两栏结构，
+   消息排版参考 shadcn 的 Message / Bubble / Marker 划分
+   颜色统一放在 :root 变量里，深色模式只覆盖变量
+   ========================================================================== */
+
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  --bg: #f7f7f8;
+  --sidebar-bg: #f1f1f3;
+  --panel: #ffffff;
+  --border: #e5e5e7;
+  --border-strong: #d6d6d9;
+  --text: #17171a;
+  --muted: #8a8a8f;
+  --accent: #1f1f23;
+  --accent-soft: #d9d9de;
+  --user-bubble: #ececee;
+  --danger-bg: #fdeceb;
+  --danger-text: #a4262c;
+  --radius: 10px;
+
+  color: var(--text);
+  background-color: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 360px;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------- 两栏骨架 ---------- */
+
+.app {
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  /* 窄屏时侧栏是 absolute 抽屉，以 .app 为定位基准 */
+  position: relative;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+
+/* ---------- 左侧会话栏 ---------- */
+
+.sidebar {
+  width: 248px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  /* 宽屏用 margin 收起，窄屏用 transform 收起，两种都做过渡 */
+  transition: margin-left 0.18s ease, transform 0.18s ease;
+}
+
+.app--collapsed .sidebar {
+  margin-left: -248px;
+}
+
+.sidebar__head {
+  padding: 12px 10px 8px;
+}
+
+.sidebar__new {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sidebar__new:hover {
+  border-color: var(--accent);
+}
+
+.sidebar__plus {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sidebar__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+}
+
+.sidebar__group + .sidebar__group {
+  margin-top: 14px;
+}
+
+.sidebar__group-title {
+  margin: 0 0 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.sidebar__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar__row--active .sidebar__item {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.sidebar__item {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 30px 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.sidebar__item:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text);
+}
+
+.sidebar__del {
+  position: absolute;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.sidebar__row:hover .sidebar__del {
+  opacity: 1;
+}
+
+.sidebar__del:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--danger-text);
+}
+
+.sidebar__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sidebar__status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2ea043;
+}
+
+/* ---------- 顶部栏 ---------- */
+
+.topbar {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar__toggle {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.topbar__toggle:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text);
+}
+
+.topbar__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.topbar__name {
+  font-weight: 600;
+}
+
+.topbar__model {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.topbar__action {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.topbar__action:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.topbar__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- 错误提示条 ---------- */
+
+.banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 16px 0;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 13px;
+}
+
+.banner__text {
+  overflow-wrap: anywhere;
+}
+
+.banner__close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ---------- 消息区 ---------- */
+
+.messages-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* flex 子项默认 min-width:auto，内容过宽会撑破容器；
+     改成 0 才允许它收缩，横向滚动交给内部的 .messages */
+  min-width: 0;
+}
+
+/* 上下边缘渐隐，提示上面还有内容（参考 shadcn 的 scroll-fade） */
+.messages-wrap::before,
+.messages-wrap::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.messages-wrap::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--panel), transparent);
+}
+
+.messages-wrap::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--panel), transparent);
+}
+
+.messages {
+  height: 100%;
+  overflow-y: auto;
+  /* 用 max-width 限制阅读宽度；width:100% 保证不满屏时也能居中 */
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 26px 24px 12px;
+}
+
+.messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.messages::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+}
+
+/* ---------- 一条消息 ---------- */
+
+.msg {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.msg--user {
+  justify-content: flex-end;
+}
+
+.msg__avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-top: 2px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.msg__body {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 15px;
+}
+
+.msg--user .msg__body {
+  max-width: 78%;
+}
+
+.bubble {
+  padding: 9px 14px;
+  border-radius: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bubble--user {
+  background: var(--user-bubble);
+  border-bottom-right-radius: 4px;
+}
+
+/* 助手正文排版（markdown 渲染出来的元素） */
+.msg__body > :first-child {
+  margin-top: 0;
+}
+
+.msg__body > :last-child {
+  margin-bottom: 0;
+}
+
+.msg__body p {
+  margin: 0 0 10px;
+}
+
+.msg__body ul,
+.msg__body ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.msg__body blockquote {
+  margin: 10px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.msg__body a {
+  color: #2563eb;
+}
+
+.msg__body pre {
+  margin: 10px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: #f6f6f7;
+  overflow-x: auto;
+}
+
+.msg__body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
+
+.msg__body table {
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.msg__body th,
+.msg__body td {
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+}
+
+/* ---------- 工具调用 Marker ---------- */
+
+.marker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -6px 0 18px 38px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent-soft);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.marker__badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.marker__name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+}
+
+.marker__args {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 流式提示 ---------- */
+
+/* 等待首个字符：微光文字 */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--text) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* 正在输出：末尾闪烁光标 */
+.caret {
+  display: inline-block;
+  width: 6px;
+  height: 15px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--text);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* ---------- 空态 ---------- */
+
+.empty {
+  padding: 6vh 0 0;
+  text-align: center;
+}
+
+.empty__title {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.empty__subtitle {
+  margin: 0 0 26px;
+  color: var(--muted);
+}
+
+.empty__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  text-align: left;
+}
+
+.empty__card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.empty__card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.empty__card-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.empty__card-text {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ---------- 底部输入区 ---------- */
+
+.composer {
+  flex: none;
+  padding: 10px 24px 18px;
+}
+
+.composer__box {
+  max-width: 780px;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.composer__box:focus-within {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.composer__input {
+  width: 100%;
+  padding: 12px 14px 4px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  resize: none;
+  outline: none;
+}
+
+.composer__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 10px 10px 14px;
+}
+
+.composer__hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.composer__send {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.composer__send:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.composer__send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- 深色模式：只覆盖变量 ---------- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131315;
+    --sidebar-bg: #171719;
+    --panel: #1c1c1f;
+    --border: #2b2b30;
+    --border-strong: #3a3a41;
+    --text: #ececef;
+    --muted: #8e8e96;
+    --accent: #ececef;
+    --accent-soft: #33333a;
+    --user-bubble: #26262b;
+    --danger-bg: #3a1f21;
+    --danger-text: #f3c3c5;
+  }
+
+  .msg__body pre {
+    background: #171719;
+  }
+
+  .sidebar__item:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .sidebar__del:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .topbar__toggle:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* ---------- 窄屏：侧栏改成抽屉 ---------- */
+
+@media (max-width: 860px) {
+  .sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 20;
+    height: 100%;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.12);
+  }
+
+  /* 抽屉收起：整体移出屏幕。用 transform 而不是 margin-left，
+     因为 absolute 元素已经脱离 flex 流，margin 不会让主区补上这块宽度 */
+  .app--collapsed .sidebar {
+    transform: translateX(-100%);
+    margin-left: 0;
+  }
+
+  .empty__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- 窄屏遮罩 ---------- */
+
+/* 遮罩默认不显示：宽屏时侧栏本来就是常驻的，不需要挡 */
+.scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* 只在窄屏、且抽屉展开时显示。
+   这条必须写在上面的基础规则之后 —— 同优先级下后写的生效，
+   写反了就会被 display:none 覆盖，遮罩永远出不来 */
+@media (max-width: 860px) {
+  .scrim {
+    display: block;
+  }
+}
+
+/* ---------- 消息操作区（重新生成） ---------- */
+
+.msg__actions {
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* 鼠标移到这条消息上才显示按钮，平时不抢注意力 */
+.msg--assistant:hover .msg__actions {
+  opacity: 1;
+}
+
+.msg__action {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.msg__action:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* ---------- 停止生成按钮 ---------- */
+
+.composer__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer__stop {
+  padding: 6px 14px;
+  border: 1px solid var(--danger-text);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.composer__stop:hover {
+  background: var(--danger-bg);
+}
+
+/* ---------- 回到底部按钮 ---------- */
+
+.jump-bottom {
+  position: absolute;
+  right: 24px;
+  bottom: 12px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.jump-bottom:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}

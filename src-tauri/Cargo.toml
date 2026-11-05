@@ -1,0 +1,69 @@
+[package]
+name = "mini_agent"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "mini_agent_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# LLM HTTP 调用
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+tokio-stream = "0.1"
+async-stream = "0.3"
+
+async-trait = "0.1"
+
+# 错误处理
+anyhow = "1"
+thiserror = "2"
+
+# 配置与密钥环境变量
+dotenvy = "0.15"
+
+# 日志
+log = "0.4"
+env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# 工具
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+regex = "1"
+rand = "0.10.3"
+
+# 序列化扩展
+serde_yaml = "0.9"
+
+# 本地存储（会话/历史记录）
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
