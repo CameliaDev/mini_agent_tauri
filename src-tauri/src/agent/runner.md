@@ -21,7 +21,7 @@
 3. 每轮调用 `provider.chat_stream(&req, tx.clone(), cancel.clone())`，流式事件通过传入的 `tx` 进入通道；返回值 `ChatResponse` 里带着本轮完整文字、工具调用列表和 `finish_reason`。
 4. `result.tool_calls.is_empty()` 表示模型给出最终答复：推一个 `StreamEvent::Done`，直接 `return Ok(result)`。
 5. 有工具调用时先用 [`append_assistant`](./session.md) 把助手消息（含 `tool_calls`）追加进历史，然后逐个 `registry.execute(call)`；失败时不中断，把 `工具执行失败: {e}` 当成工具结果文本回灌给模型，让它自己决定下一步。
-6. 每个工具结果用 [`append_tool_result`](./session.md) 追加成 `role = "tool"` 消息，并带上 `tool_call_id`。
+6. 每个工具结果先推一条 `StreamEvent::ToolResult`（`call_id` 对上卡片，`is_error` 看输出是不是以「工具执行失败」开头），再用 [`append_tool_result`](./session.md) 追加成 `role = "tool"` 消息，并带上 `tool_call_id`。
 7. 走满 10 轮仍没结束：推 `Done`，返回 `Err("工具调用轮数超过上限 10")`，不静默返回空结果。
 
 ## 依赖关系

@@ -1,8 +1,8 @@
-// 消息区：滚动容器 + 消息行（参考 shadcn 的 Message / Bubble / Marker 划分）
-import { useMemo } from "react";
+// 消息区：滚动容器 + 消息行（参考 shadcn 的 Message / Bubble 划分）
+import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { activeMessages, useChatStore } from "../store";
+import { activeMessages, useChatStore, type UiMessage } from "../store";
 import { useStickToBottom } from "../hooks/useStickToBottom";
 import { EmptyState } from "./EmptyState";
 import { regenerate } from "../ipc/chat";
@@ -41,23 +41,15 @@ export function MessageList() {
           <EmptyState onPick={setDraft} />
         ) : (
           messages.map((message) => {
-            // 工具调用：做成一条 Marker 行（带竖线的小行），不进气泡
             if (message.role === "tool") {
-              return (
-                <div key={message.id} className="marker">
-                  <span className="marker__badge">工具</span>
-                  <code className="marker__name">
-                    {message.toolName ?? "未知工具"}
-                  </code>
-                  <span className="marker__args">
-                    {summarize(message.toolCall?.function.arguments)}
-                  </span>
-                </div>
-              );
+              return <ToolCard key={message.id} message={message} />;
             }
 
-            // 助手消息：左侧小头像 + 正文，不加气泡（成熟产品的排版方式）
+            // 助手消息：左侧小头像 + 正文，不加气泡
             if (message.role === "assistant") {
+              const waiting =
+                message.phase === "waiting" ||
+                (message.streaming && !message.content);
               return (
                 <article key={message.id} className="msg msg--assistant">
                   <div className="msg__avatar" aria-hidden="true">
@@ -69,13 +61,20 @@ export function MessageList() {
                         {message.content}
                       </ReactMarkdown>
                     )}
-                    {/* 等待首个字符：微光文字（参考 shadcn 的 shimmer） */}
-                    {message.streaming && !message.content && (
-                      <span className="shimmer">正在思考…</span>
-                    )}
-                    {/* 正在输出：末尾跟一个闪烁光标 */}
-                    {message.streaming && message.content && (
+                    {waiting && <span className="shimmer">思考中…</span>}
+                    {message.phase === "streaming" && message.content && (
                       <span className="caret" />
+                    )}
+                    {message.phase === "streaming" && (
+                      <div className="msg__status">生成中</div>
+                    )}
+                    {message.phase === "stopped" && (
+                      <div className="msg__status">已停止</div>
+                    )}
+                    {message.phase === "failed" && (
+                      <div className="msg__status msg__status--bad">
+                        生成失败
+                      </div>
                     )}
                     {/* 最后一条助手回复下面给一个「重新生成」 */}
                     {message.id === lastAssistantId && !message.streaming && (
@@ -121,9 +120,36 @@ export function MessageList() {
   );
 }
 
-// 把工具参数压成一行摘要
-function summarize(args?: string): string {
-  if (!args) return "";
-  const oneLine = args.replace(/\s+/g, " ").trim();
-  return oneLine.length > 60 ? `${oneLine.slice(0, 60)}…` : oneLine;
+const TOOL_STATUS_LABEL = {
+  running: "运行中",
+  done: "完成",
+  error: "失败",
+  stopped: "已停止",
+} as const;
+
+// 工具卡片：名字 + 状态。结束后输出默认折叠
+function ToolCard({ message }: { message: UiMessage }) {
+  const [open, setOpen] = useState(false);
+  const status = message.toolStatus ?? "done";
+  const canExpand = status !== "running" && message.content.length > 0;
+  return (
+    <div className={`toolcard toolcard--${status}`}>
+      <div className="toolcard__row">
+        <code className="toolcard__name">{message.toolName ?? "未知工具"}</code>
+        <span className="toolcard__status">{TOOL_STATUS_LABEL[status]}</span>
+        {canExpand && (
+          <button
+            type="button"
+            className="toolcard__toggle"
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? "收起" : "展开"}
+          </button>
+        )}
+      </div>
+      {open && canExpand && (
+        <pre className="toolcard__body">{message.content}</pre>
+      )}
+    </div>
+  );
 }

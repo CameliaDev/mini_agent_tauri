@@ -39,14 +39,23 @@ export interface ChatResponse {
   finish_reason: string | null;
 }
 
-// StreamEvent 用 serde 默认的外部标签枚举表示，JSON 形态就是下面四种
+// StreamEvent 用 serde 默认的外部标签枚举表示
 // TextDelta -> { "TextDelta": "..." }
 // ToolCalls -> { "ToolCalls": [...] }
+// ToolResult -> { "ToolResult": { call_id, name, output, is_error } }
 // Cancelled -> "Cancelled"
 // Done      -> "Done"
+export interface ToolResultEvent {
+  call_id: string;
+  name: string;
+  output: string;
+  is_error: boolean;
+}
+
 export type StreamEvent =
   | { TextDelta: string }
   | { ToolCalls: ToolCall[] }
+  | { ToolResult: ToolResultEvent }
   | "Cancelled"
   | "Done";
 

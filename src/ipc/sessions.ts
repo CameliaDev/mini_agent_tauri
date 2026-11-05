@@ -49,6 +49,13 @@ function toUi(message: StoredMessage): UiMessage {
     toolName: message.tool_name ?? undefined,
     // 工具调用
     toolCall: message.tool_call ?? undefined,
+    // 库里没有状态列。有正文且以失败前缀开头算失败，否则算已经结束
+    toolStatus:
+      message.role === "tool"
+        ? message.content.startsWith("工具执行失败")
+          ? "error"
+          : "done"
+        : undefined,
     // 创建时间
     createdAt: message.created_at,
   };

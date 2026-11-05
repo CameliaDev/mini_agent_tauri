@@ -2,6 +2,12 @@
 import { create } from "zustand";
 import type { SessionMeta, ToolCall } from "./types";
 
+// 助手气泡上的生成阶段。空着表示这一轮已经正常结束
+export type AssistantPhase = "waiting" | "streaming" | "stopped" | "failed";
+
+// 工具卡片的状态。running 时还没有输出
+export type ToolStatus = "running" | "done" | "error" | "stopped";
+
 // 界面上的一条消息，比后端 ChatMessage 多了展示用的状态
 export interface UiMessage {
   id: string;
@@ -11,6 +17,10 @@ export interface UiMessage {
   toolName?: string;
   // role 为 tool 时保存完整的工具调用
   toolCall?: ToolCall;
+  // 工具卡片：运行中 / 完成 / 失败 / 被停止
+  toolStatus?: ToolStatus;
+  // 助手消息：等待首 token / 正在输出 / 已停止 / 失败
+  phase?: AssistantPhase;
   // 是否正在流式追加文字
   streaming?: boolean;
   // 创建时间（毫秒时间戳），落库时用
@@ -32,6 +42,8 @@ interface ChatState {
   // 当前正在看的会话
   activeSessionId: string;
   isStreaming: boolean;
+  // 停止按钮在请求发出前就出现。这段时间里后端还没开始，靠这个标记别再发出去
+  stopRequested: boolean;
   error: string | null;
   // 输入框草稿
   draft: string;
@@ -51,10 +63,15 @@ interface ChatState {
   // appendUser / startAssistant 作用在当前会话上；
   // 其余几个按「消息 id」定位所属会话，用户中途切走也不会写错地方
   appendUser: (text: string) => void;
+  // 一点发送就置上，停止按钮不用等助手气泡建好
+  beginTurn: () => void;
+  noteStop: () => void;
   startAssistant: () => string;
   appendDelta: (id: string, text: string) => void;
   addToolCards: (calls: ToolCall[], anchorId: string) => void;
+  completeTool: (callId: string, output: string, isError: boolean) => void;
   finish: (anchorId?: string) => void;
+  markStopped: (anchorId?: string) => void;
   fail: (message: string, anchorId?: string) => void;
   clearError: () => void;
 }
@@ -132,6 +149,33 @@ function patchByMessage(
   };
 }
 
+// 一轮结束时整理单条消息。只改这一轮的助手气泡，以及还在跑的工具卡片
+function settleMessage(
+  message: UiMessage,
+  outcome: "done" | "stopped" | "failed",
+  anchorId?: string,
+): UiMessage {
+  if (message.role === "tool" && message.toolStatus === "running") {
+    return { ...message, toolStatus: "stopped" };
+  }
+  if (message.role !== "assistant") return message;
+  if (anchorId !== undefined && message.id !== anchorId) return message;
+  if (outcome === "stopped") {
+    return { ...message, streaming: false, phase: "stopped" };
+  }
+  if (outcome === "failed") {
+    return { ...message, streaming: false, phase: "failed" };
+  }
+  // 正常结束：停止和失败的标记别被清掉（取消之后 invoke 还会再 finish 一次）
+  if (message.phase === "stopped" || message.phase === "failed") {
+    return { ...message, streaming: false };
+  }
+  if (message.streaming || message.phase) {
+    return { ...message, streaming: false, phase: undefined };
+  }
+  return message;
+}
+
 // 初始就准备一个空会话
 const firstSession = emptySession();
 
@@ -139,6 +183,7 @@ export const useChatStore = create<ChatState>((set) => ({
   sessions: [firstSession],
   activeSessionId: firstSession.id,
   isStreaming: false,
+  stopRequested: false,
   error: null,
   draft: "",
 
@@ -270,9 +315,12 @@ export const useChatStore = create<ChatState>((set) => ({
       error: null,
     })),
 
+  // 发送或重新生成的第一下就换成停止按钮，不必等网络
+  beginTurn: () => set({ isStreaming: true, error: null, stopRequested: false }),
+  noteStop: () => set({ stopRequested: true }),
+
   // 建一条空助手消息，返回它的 id
-  // 同时把 isStreaming 置为 true：这一步是「正在生成」状态的唯一来源，
-  // 停止按钮、发送禁用、重复发送保护全都看它
+  // phase 先是 waiting：还没有第一个字，界面显示「思考中…」
   startAssistant: () => {
     const id = newId();
     set((s) => ({
@@ -287,6 +335,7 @@ export const useChatStore = create<ChatState>((set) => ({
             role: "assistant",
             content: "",
             streaming: true,
+            phase: "waiting",
             createdAt: Date.now(),
           },
         ],
@@ -303,7 +352,9 @@ export const useChatStore = create<ChatState>((set) => ({
       patchByMessage(s, id, (session) => ({
         ...session,
         messages: session.messages.map((m) =>
-          m.id === id ? { ...m, content: m.content + text } : m,
+          m.id === id
+            ? { ...m, content: m.content + text, phase: "streaming" as const }
+            : m,
         ),
         updatedAt: Date.now(),
       })),
@@ -323,6 +374,7 @@ export const useChatStore = create<ChatState>((set) => ({
             content: "",
             toolName: call.function.name,
             toolCall: call,
+            toolStatus: "running" as const,
             createdAt: Date.now(),
           })),
         ],
@@ -330,9 +382,31 @@ export const useChatStore = create<ChatState>((set) => ({
       })),
     ),
 
-  // 结束生成：清掉 streaming 标记
-  // 如果这条助手消息一个字都没收到（比如刚发出就被停了），把它删掉，
-  // 否则界面上会留下一条空气泡
+  // 某个工具执行完了。按 call id 找到卡片，写上输出
+  completeTool: (callId, output, isError) =>
+    set((s) => ({
+      sessions: s.sessions.map((session) => {
+        if (!session.messages.some((m) => m.toolCall?.id === callId)) {
+          return session;
+        }
+        return {
+          ...session,
+          messages: session.messages.map((m) =>
+            m.toolCall?.id === callId
+              ? {
+                  ...m,
+                  content: output,
+                  toolStatus: isError ? ("error" as const) : ("done" as const),
+                }
+              : m,
+          ),
+          updatedAt: Date.now(),
+        };
+      }),
+    })),
+
+  // 正常结束：清掉 streaming。还停在「思考中」且一个字都没有的气泡删掉
+  // 已经标成停止或失败的不要动，避免和取消事件打架
   // anchorId 用来定位「这一轮」属于哪个会话
   finish: (anchorId) =>
     set((s) => ({
@@ -351,39 +425,48 @@ export const useChatStore = create<ChatState>((set) => ({
         return {
           ...session,
           messages: session.messages
-            // 删掉「正在流式且内容为空」的那一条
-            .filter((m) => !(m.streaming && m.content === ""))
-            // 其余的清掉 streaming 标记
-            .map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+            // 正常结束却一个字都没有：删掉「思考中」占位，不留空气泡
+            .filter((m) => !(m.phase === "waiting" && m.content === ""))
+            .map((m) => settleMessage(m, "done", anchorId)),
         };
       }),
     })),
 
-  // 出错：记录错误，并把还没接到文字的空气泡删掉
-  // anchorId 用来定位「这一轮」属于哪个会话
-  fail: (message, anchorId) =>
+  // 用户点了停止：保留已经写出来的字，气泡标成「已停止」
+  markStopped: (anchorId) =>
     set((s) => ({
-      // 生成结束
       isStreaming: false,
-      // 记录错误
-      error: message,
-      // 只动包含这条助手消息的会话
       sessions: s.sessions.map((session) => {
-        // 找的是这条消息所在的会话
         const owns =
           anchorId !== undefined
             ? session.messages.some((m) => m.id === anchorId)
             : session.id === s.activeSessionId;
-        // 不是目标会话就原样返回
         if (!owns) return session;
-        // 处理这一个会话
         return {
           ...session,
-          messages: session.messages
-            // 删掉空气泡
-            .filter((m) => !(m.streaming && m.content === ""))
-            // 其余的清掉 streaming 标记
-            .map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+          messages: session.messages.map((m) =>
+            settleMessage(m, "stopped", anchorId),
+          ),
+        };
+      }),
+    })),
+
+  // 出错：顶上出一条提示，气泡标成失败。半截文字留着
+  fail: (message, anchorId) =>
+    set((s) => ({
+      isStreaming: false,
+      error: message,
+      sessions: s.sessions.map((session) => {
+        const owns =
+          anchorId !== undefined
+            ? session.messages.some((m) => m.id === anchorId)
+            : session.id === s.activeSessionId;
+        if (!owns) return session;
+        return {
+          ...session,
+          messages: session.messages.map((m) =>
+            settleMessage(m, "failed", anchorId),
+          ),
         };
       }),
     })),

@@ -145,7 +145,7 @@ npm run tauri dev
 | 9 | 会话落 SQLite（后端）而非 `localStorage` | 事务性写入、结构化查询、数据随应用数据目录走 | 每次落库逐条 IPC，消息多时偏慢 |
 | 10 | `INSERT OR REPLACE` + 消息 id 主键 | 重试/重落库不会产生重复行，前端不用维护「哪些是新的」 | 无批量事务 |
 | 11 | 滚动锚定 `useStickToBottom` | 用户上翻时不能被硬拽回底部；不贴底时给「回到底部」 | 阈值 80px 是经验值 |
-| 12 | 助手消息无气泡 + 工具用 Marker 行 | 对标成熟桌面 AI 客户端的长文可读性 | 与「所有消息都是气泡」的直觉不同 |
+| 12 | 助手消息无气泡 + 工具用可折叠卡片 | 对标成熟桌面 AI 客户端的长文可读性；输出默认收起 | 与「所有消息都是气泡」的直觉不同 |
 | 13 | 深色模式只覆盖 CSS 变量 | 新增组件不用考虑配色分支 | 个别硬编码颜色需单独覆盖 |
 
 ### 2.3 质量门禁
@@ -239,7 +239,7 @@ Composer → sendMessage(text)
        ├─ 两级通道：agent 推内部 mpsc → 转发任务推 Tauri Channel → 前端
        ├─ agent::run_agent 循环：chat_stream → 有工具就执行并回填历史 → 再问
        └─ sse::parse_response 用 select! 同时等「来数据」和「被取消」
-  5. 事件翻译：TextDelta→appendDelta / ToolCalls→addToolCards / Done|Cancelled→finish
+  5. 事件翻译：TextDelta→appendDelta / ToolCalls→addToolCards / ToolResult→completeTool / Done→finish / Cancelled→markStopped
   6. invoke resolve/reject → finish / fail 兜底
   7. finally → persistSession(sessionId) 落库（成功/失败/取消都写）
 ```
@@ -353,13 +353,12 @@ mini_agent/
 | `identifier` 为模板默认 | 不能正式发布 | 改成自有域名反写 |
 | 每次落库逐条 `append_message` | 长对话 IPC 次数多 | 改批量事务 / 只增量写新消息 |
 | 不支持会话重命名 | 标题自动取首条消息前 24 字 | 加右键重命名 + `save_session` 更新 |
-| 工具执行结果界面不可见 | 只显示「模型点了哪个工具」 | 新增 ToolResult 事件与展示 |
 | 单令牌、同时只能一轮生成 | 不能并发多会话生成 | 改成按会话 id 持有令牌 |
 | SSE 未合并同一事件的多行 `data` | 少数厂商兼容问题 | 按空行切事件再合并 `data` |
 | 未裁剪历史 | 长对话 token 膨胀 | 按 token 预算裁剪或摘要 |
 | 模板残留依赖与图标 | 安装体积、品牌一致性 | 清理 `package.json` 未用包、换自有图标 |
 | bash 不是沙箱 | 黑名单按空白分词，挡不住 `cd /` 之后的破坏；`echo "rm -rf /"` 这种无害句子会被误伤 | 真要隔离再上容器或系统调用过滤 |
-| 界面打磨未做完 | 停止后的收尾、工具卡片时序、空状态引导还要再核 | 留待后续的 UX 打磨 |
+| 助手阶段不落库 | 重新打开会话后，「已停止 / 生成失败」只剩正文 | 真要保留再加列；现在按正文能否看出失败的只有工具卡片 |
 
 ---
 

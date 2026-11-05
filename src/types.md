@@ -15,6 +15,7 @@
 | `ChatMessage` | `protocol.rs` 的 `ChatMessage` | `tool_calls` / `tool_call_id` 是可选字段 |
 | `ChatRequest` | `protocol.rs` 的 `ChatRequest` | `tools` 不用传，后端会用自己的工具清单覆盖 |
 | `ChatResponse` | `protocol.rs` 的 `ChatResponse` | `invoke("chat")` 的返回类型 |
+| `ToolResultEvent` | `agent/events.rs` 的 `ToolResultEvent` | 一个工具跑完：`call_id` / `name` / `output` / `is_error` |
 | `StreamEvent` | `agent/events.rs` 的 `StreamEvent` | 后端流式事件的联合类型 |
 | `SessionMeta` | `protocol.rs` 的 `SessionMeta` | 会话元信息，对应数据库 `sessions` 表一行 |
 | `StoredMessage` | `protocol.rs` 的 `StoredMessage` | 落库的消息，对应数据库 `messages` 表一行 |
@@ -27,15 +28,16 @@ Rust 的枚举在 serde 默认的「外部标签」表示下，JSON 形态是：
 | --- | --- |
 | `TextDelta(String)` | `{"TextDelta":"..."}` |
 | `ToolCalls(Vec<ToolCall>)` | `{"ToolCalls":[...]}` |
+| `ToolResult(ToolResultEvent)` | `{"ToolResult":{...}}` |
 | `Cancelled`（单元变体） | `"Cancelled"` |
 | `Done`（单元变体） | `"Done"` |
 
-所以前端对应地写成 `| { TextDelta: string } | { ToolCalls: ToolCall[] } | "Cancelled" | "Done"`：对象变体用 `in` 判断，字符串变体直接比较。
+所以前端对应地写成 `| { TextDelta: string } | { ToolCalls: ToolCall[] } | { ToolResult: ToolResultEvent } | "Cancelled" | "Done"`：对象变体用 `in` 判断，字符串变体直接比较。
 
 ## 依赖关系
 
 - 依赖：无（只用了 TypeScript 内置类型）。
-- 被谁使用：`store.ts`、`ipc/chat.ts`、`components/ToolCallCard.tsx`。
+- 被谁使用：`store.ts`、`ipc/chat.ts`、`components/MessageList.tsx`。
 
 ## 当前行为说明
 

@@ -109,6 +109,17 @@ pub async fn run_agent(
                 .execute(call)
                 .await
                 .unwrap_or_else(|e| format!("工具执行失败: {}", e));
+            // 先告诉界面这张卡片跑完了。失败也是一条结果，卡片上标成错误
+            let _ = tx
+                .send(StreamEvent::ToolResult(
+                    crate::agent::events::ToolResultEvent {
+                        call_id: call.id.clone(),
+                        name: call.function.name.clone(),
+                        output: output.clone(),
+                        is_error: output.starts_with("工具执行失败"),
+                    },
+                ))
+                .await;
             // 把工具结果作为一条 role=tool 的消息追加进历史
             // tool_call_id 必填，它是模型把结果和刚才那次调用对起来的唯一凭据
             append_tool_result(&mut req.messages, call, output);

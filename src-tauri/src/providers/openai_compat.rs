@@ -75,6 +75,10 @@ impl ChatModel for OpenAiCompatProvider {
                 // 把工具清单（菜单）写进请求体
                 .insert("tools".to_string(), serde_json::json!(&req.tools));
         }
+        // 空密钥不必打到网络上。前端会把这句话换成可读的中文提示
+        if self.api_key.trim().is_empty() {
+            anyhow::bail!("缺少 API Key：请在项目根目录的 .env 里设置 DEEPSEEK_API_KEY 后重启");
+        }
         // 发起 POST 请求并等待响应头回来
         let resp = self
             // 从复用的 client 创建一个 POST 请求

@@ -356,7 +356,7 @@ button {
   /* 用 max-width 限制阅读宽度；width:100% 保证不满屏时也能居中。
      不用 height:100%：父级高度不确定时百分比会失效，把整列撑高。 */
   width: 100%;
-  max-width: 780px;
+  max-width: 720px;
   margin: 0 auto;
   padding: 26px 24px 12px;
 }
@@ -472,37 +472,62 @@ button {
   padding: 5px 9px;
 }
 
-/* ---------- 工具调用 Marker ---------- */
+/* ---------- 工具卡片 ---------- */
 
-.marker {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.toolcard {
   margin: -6px 0 18px 38px;
-  padding-left: 12px;
+  padding: 6px 0 6px 12px;
   border-left: 2px solid var(--accent-soft);
   font-size: 12.5px;
   color: var(--muted);
 }
 
-.marker__badge {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--text);
-  font-size: 11px;
+.toolcard--error {
+  border-left-color: var(--danger-text);
 }
 
-.marker__name {
+.toolcard__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolcard__name {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
 }
 
-.marker__args {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.toolcard__status {
+  color: var(--muted);
+}
+
+.toolcard--error .toolcard__status {
+  color: var(--danger-text);
+}
+
+.toolcard__toggle {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.toolcard__toggle:hover {
+  color: var(--text);
+}
+
+.toolcard__body {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
 }
 
 /* ---------- 流式提示 ---------- */
@@ -523,6 +548,16 @@ button {
   50% {
     opacity: 1;
   }
+}
+
+.msg__status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.msg__status--bad {
+  color: var(--danger-text);
 }
 
 /* 正在输出：末尾闪烁光标 */
@@ -607,7 +642,7 @@ button {
 
 .composer__box {
   position: relative;
-  max-width: 780px;
+  max-width: 720px;
   margin: 0 auto;
   border: 1px solid var(--border);
   border-radius: 14px;

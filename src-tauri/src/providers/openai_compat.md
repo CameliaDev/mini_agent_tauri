@@ -23,7 +23,7 @@
 
 1. 请求体用 `serde_json::json!` 构造四个键：`model`、`messages`、`stream: true`、`temperature`（`unwrap_or(0.7)`）。
 2. 只有 `req.tools` 非空才插入 `tools` 字段，避免某些模型对空数组报错。
-3. `POST {base_url}/chat/completions`，用 `.bearer_auth(&self.api_key)` 加鉴权头，`.json(&body)` 设置请求体，`.send().await?` 发送。
+3. 密钥是空白就直接 `bail`，错误文案里带 `缺少 API Key` 和 `DEEPSEEK_API_KEY`，前端据此换成短提示，不必先打一发 401。然后 `POST {base_url}/chat/completions`，用 `.bearer_auth(&self.api_key)` 加鉴权头，`.json(&body)` 设置请求体，`.send().await?` 发送。
 4. `error_for_status()?` 把 4xx/5xx 转成错误，避免把错误页当成 SSE 流解析。
 5. 最后 `sse::parse_response(resp, &tx).await`：解析逻辑不在这个文件里。
 

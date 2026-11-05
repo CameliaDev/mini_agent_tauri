@@ -8,7 +8,7 @@
 
 ## 界面结构
 
-布局参考 Chatbox / NextChat / LobeChat 这类桌面 AI 客户端：**左边会话栏 + 右边对话区**；消息排版参考 shadcn 的 `Message` / `Bubble` / `Marker`（助手无气泡、用户浅气泡、工具调用用 Marker 行）。
+布局参考 Chatbox / NextChat / LobeChat 这类桌面 AI 客户端：**左边会话栏 + 右边对话区**；消息排版参考 shadcn 的 `Message` / `Bubble`（助手无气泡、用户浅气泡、工具调用用可折叠卡片）。
 
 ```
 ┌────────────┬──────────────────────────────────┐
@@ -64,7 +64,7 @@
 3. `store.startAssistant` 建一条空助手消息，拿到它的 id
 4. `new Channel(...)` 注册回调，把事件翻译成 store 动作
 5. `invoke("chat", { req, onEvent })`
-6. 后端推 `TextDelta` → `appendDelta` 追加到那条助手消息；推 `ToolCalls` → `addToolCards` 插一条工具记录；推 `Done` → `finish` 收尾；推 `Cancelled` → `finish` 收尾（保留半截文字）
+6. 后端推 `TextDelta` → `appendDelta`；推 `ToolCalls` → `addToolCards`；推 `ToolResult` → `completeTool`；推 `Done` → `finish`；推 `Cancelled` → `markStopped`（保留半截文字，标成已停止）
 7. `invoke` resolve / reject → `finish` / `fail` 兜底关掉「生成中」
 8. `finally` → `persistSession(sessionId)` 把这一轮落库
 

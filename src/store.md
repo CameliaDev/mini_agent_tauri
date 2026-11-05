@@ -11,7 +11,8 @@
 
 | 定义 | 作用 |
 | --- | --- |
-| `UiMessage` | 界面上的一条消息：比后端 `ChatMessage` 多了 `id`、`streaming`、`toolName`、`toolCall`、`createdAt` |
+| `UiMessage` | 界面上的一条消息：比后端 `ChatMessage` 多了 `id`、`streaming`、`phase`、`toolName`、`toolCall`、`toolStatus`、`createdAt` |
+| `AssistantPhase` / `ToolStatus` | 助手气泡的阶段，以及工具卡片的状态。不落库 |
 | `Session` | 一个会话：`id`、`title`、`messages`、`createdAt`、`updatedAt` |
 | `ChatState` | 状态字段 + 所有动作的类型 |
 | `groupOf(session)` | 侧栏分组：今天 / 昨天 / 更早 |
@@ -37,11 +38,15 @@
 | 动作 | 作用 |
 | --- | --- |
 | `appendUser(text)` | 加一条用户消息；如果是本会话第一条消息，用它当标题 |
-| `startAssistant()` | 建一条空助手消息，返回它的 id |
-| `appendDelta(id, text)` | 给 id 匹配的那一条追加文字 |
-| `addToolCards(calls, anchorId)` | 为每个工具调用插一条记录 |
-| `finish(anchorId?)` | 结束生成：清掉 `streaming` 标记；一个字都没收到时把空气泡删掉 |
-| `fail(message, anchorId?)` | 出错：记录错误、删掉空气泡 |
+| `beginTurn()` | 把 `isStreaming` 置真、清掉错误和上一轮的停止标记。发送和重新生成一进来就调 |
+| `noteStop()` | 本地记「用户已经点了停止」。请求还没进后端时，`runAgent` 看到它就不再发出去 |
+| `startAssistant()` | 建一条空助手消息，`phase` 为 `waiting`，返回它的 id |
+| `appendDelta(id, text)` | 给 id 匹配的那一条追加文字，并把 `phase` 改成 `streaming` |
+| `addToolCards(calls, anchorId)` | 为每个工具调用插一条 `toolStatus: running` 的记录 |
+| `completeTool(callId, output, isError)` | 按 `toolCall.id` 写上输出，状态改成完成或失败 |
+| `finish(anchorId?)` | 正常结束：清掉 `streaming`。还停在 `waiting` 且没有文字的气泡删掉。已经是停止或失败的不要改掉 |
+| `markStopped(anchorId?)` | 用户停止：保留文字（包括空的），气泡标成 `stopped`，还在跑的工具标成 `stopped` |
+| `fail(message, anchorId?)` | 出错：顶部记一条错误，这一轮助手气泡标成 `failed`，半截文字留着 |
 | `clearError()` / `setDraft(text)` | 杂项 |
 
 ## 逻辑要点
@@ -50,8 +55,8 @@
 2. 所有会话改动都经过 `patchActive`：只替换当前会话，其它会话原样返回（不可变更新，React 才会正确重渲染）。
 3. `EMPTY` 是一个模块级常量数组：作为 selector 的兜底值必须是稳定引用，否则每次渲染都是新数组，React 会认为状态一直在变。
 4. `activeMessages(state)` 是组件里订阅消息的入口；`useChatStore((s) => activeMessages(s))` 返回的是会话里那个数组本身，引用稳定。
-5. `fail` 会把「空的助手气泡」删掉：出错时用户看到的是错误条，而不是一条空气泡。
-6. **`startAssistant` 是 `isStreaming` 唯一的置真点**：停止按钮、发送禁用、重复发送保护全看它。
+5. `fail` 保留助手气泡并标成失败，同时在顶部放错误条。`markStopped` 同样留着气泡，用来显示「已停止」。
+6. **`beginTurn` 和 `startAssistant` 都会把 `isStreaming` 置真**。发送、重新生成先走 `beginTurn`，这样数据库截断还没返回时停止按钮也已经换上。`startAssistant` 再置一次，保证气泡和按钮一致。
 7. **流式相关动作按「消息 id」定位会话**（`patchByMessage`）：用户在生成过程中切到别的会话时，文字片段必须继续写到原来那条消息上，而不是写进新会话。
 8. **`selectSession` 不碰 `isStreaming`**：后端那一轮可能还在跑，把它置 false 会让用户以为没在生成，从而并发发起第二轮。
 

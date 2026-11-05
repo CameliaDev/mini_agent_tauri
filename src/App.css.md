@@ -17,8 +17,8 @@
 | 顶栏 | `.topbar`、`.topbar__toggle`、`.topbar__meta`、`.topbar__action` |
 | 错误条 | `.banner`、`.banner__text` |
 | 消息区 | `.messages-wrap`（上下渐隐）、`.messages`、`.msg`、`.msg__avatar`、`.msg__body`、`.bubble--user` |
-| 工具标记 | `.marker`、`.marker__badge`、`.marker__name`、`.marker__args` |
-| 流式提示 | `.shimmer`（透明度呼吸）、`.caret`（闪烁光标） |
+| 工具卡片 | `.toolcard`、`.toolcard__row`、`.toolcard__name`、`.toolcard__status`、`.toolcard__toggle`、`.toolcard__body` |
+| 流式提示 | `.shimmer`（透明度呼吸）、`.caret`（闪烁光标）、`.msg__status` |
 | 空态 | `.empty`、`.empty__grid`、`.empty__card` |
 | 输入区 | `.composer`、`.composer__box`、`.composer__input`、`.composer__foot`、`.composer__actions`、`.composer__send`、`.composer__stop` |
 | 消息操作 | `.msg__actions`、`.msg__action`（悬停才显示的「重新生成」） |
@@ -31,7 +31,8 @@
 - **高度链**：`html / body / #root` 都是 `height: 100%`，`#root` 再 flex。`.app` 用 `flex: 1` 撑满 webview，不用 `100vh`。`.main` 是列 flex，`min-height: 0` + `overflow: hidden`；`.composer` 是 `flex: none` 且 `position: relative`，钉在列底。
 - **滚动渐隐**：`.messages-wrap::before/::after` 做上下渐变遮罩，提示上面还有内容，不用额外的滚动监听。
 - **助手无气泡**：正文直接排在页面底色上，只有用户消息用 `.bubble--user` 浅灰气泡——这是成熟 AI 客户端常见的做法，长回答更好读。
-- **工具用 Marker**：`.marker` 左边一道竖线 + 小标签，表示「这是一条系统动作」，不混进气泡。
+- **工具用卡片**：`.toolcard` 左边一道竖线，名字旁边是状态。结束后的输出默认折叠，点「展开」才看到 `<pre>`。
+- **阅读宽度**：`.messages` 和 `.composer__box` 的 `max-width` 都是 720px，在 `.main` 里居中。
 - **颜色只有一处来源**：所有颜色都是变量，深色模式只覆盖变量，规则不用改。
 
 ## 布局坑的修法（值得学）
@@ -56,7 +57,7 @@ flex 子项默认 `min-width: auto`，意思是「我不小于内容宽度」。
 
 **规则**：覆盖规则必须写在被覆盖规则之后。同理，往样式表末尾 `cat >>` 追加新样式前，先看一眼文件里已有的媒体查询位置。
 
-### 4. 发送后输入框跑到屏幕左上角
+### 4. 发送后输入框跑到屏幕左上角（[#7](https://github.com/CameliaDev/mini_agent_tauri/issues/7)）
 
 WebKitGTK 会把 `<textarea>` 画成原生控件。下面任意一条都会让它的坐标变成屏幕 `(0, 0)`，而且往往要等下一次合成（发送消息、空态卸掉、开始流式）才暴露：
 
