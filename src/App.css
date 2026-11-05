@@ -67,7 +67,8 @@ button {
   min-height: 0;
   display: flex;
   overflow: hidden;
-  /* 窄屏时侧栏是 absolute 抽屉，以 .app 为定位基准 */
+  /* 极窄时侧栏才是 absolute 抽屉，以 .app 为定位基准。
+     桌面宽度侧栏留在这条 flex 里，把主栏挤到右边。 */
   position: relative;
 }
 
@@ -355,10 +356,15 @@ button {
 }
 
 .topbar__name {
+  flex: none;
   font-weight: 600;
 }
 
 .topbar__model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--muted);
 }
@@ -681,6 +687,8 @@ button {
 .empty {
   padding: 6vh 0 0;
   text-align: center;
+  /* 并排之后空态跟着主栏变窄，不跟整窗宽度走 */
+  container-type: inline-size;
 }
 
 .empty__title {
@@ -699,6 +707,13 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   text-align: left;
+}
+
+/* 主栏被侧栏挤窄、或窗口本身很窄时，示例卡片改成一列 */
+@container (max-width: 460px) {
+  .empty__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .empty__card {
@@ -833,9 +848,13 @@ button {
   }
 }
 
-/* ---------- 窄屏：侧栏改成抽屉 ---------- */
+/* ---------- 极窄：侧栏才改成抽屉 ---------- */
+/* 默认窗口 800×600，以及 ~1200 这种桌面宽度，侧栏留在 flex 里把主栏挤开。
+   ≤640px 时 248px 侧栏会把主栏挤到大约 390px 以下，顶栏（模型名 + 清空对话）
+   和输入区会挤坏，所以只在这里浮层盖住，并且默认收起。
+   断点必须和 App.tsx 的 NARROW_QUERY 一致。 */
 
-@media (max-width: 860px) {
+@media (max-width: 640px) {
   .sidebar {
     position: absolute;
     top: 0;
@@ -852,15 +871,11 @@ button {
     left: -248px;
     margin-left: 0;
   }
-
-  .empty__grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /* ---------- 窄屏遮罩 ---------- */
 
-/* 遮罩默认不显示：宽屏时侧栏本来就是常驻的，不需要挡 */
+/* 遮罩默认不显示：桌面宽度侧栏在文档流里，不需要挡 */
 .scrim {
   display: none;
   position: fixed;
@@ -869,10 +884,10 @@ button {
   background: rgba(0, 0, 0, 0.28);
 }
 
-/* 只在窄屏、且抽屉展开时显示。
+/* 只在极窄、且抽屉展开时显示。
    这条必须写在上面的基础规则之后 —— 同优先级下后写的生效，
    写反了就会被 display:none 覆盖，遮罩永远出不来 */
-@media (max-width: 860px) {
+@media (max-width: 640px) {
   .scrim {
     display: block;
   }
