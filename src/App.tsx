@@ -8,9 +8,11 @@ import { activeMessages, useChatStore } from "./store";
 import { clearMessages, hydrateFromDb, persistSession } from "./ipc/sessions";
 import "./App.css";
 
-// 窄屏断点：必须和 App.css 里 @media (max-width: 860px) 保持一致。
+// 抽屉断点：必须和 App.css 里 @media (max-width: 640px) 保持一致。
 // JS 判断「是不是抽屉模式」、CSS 决定「怎么摆」用的是同一个数字，改的时候两处一起改。
-const NARROW_QUERY = "(max-width: 860px)";
+// 默认窗口是 800×600，这个宽度以及更宽的桌面都要并排推挤，不能盖住对话。
+// 只有 ≤640px 才改成浮层：248px 侧栏再往里挤，主栏会窄到顶栏和输入区排不下。
+const NARROW_QUERY = "(max-width: 640px)";
 
 function App() {
   const error = useChatStore((s) => s.error);
@@ -18,13 +20,13 @@ function App() {
   const clearActiveSession = useChatStore((s) => s.clearActiveSession);
   // 当前会话里的消息条数，用来决定「清空对话」按钮是否可点
   const messageCount = useChatStore((s) => activeMessages(s).length);
-  // 窄屏时侧栏是浮在主区上面的抽屉，默认必须收起，
-  // 否则它一进窄屏就盖住顶栏、消息和输入框（截图里的现象）
+  // 极窄时侧栏是浮在主区上面的抽屉，默认必须收起，
+  // 否则一进页面就盖住顶栏、消息和输入框。桌面宽度默认展开，走并排推挤。
   const [sidebarOpen, setSidebarOpen] = useState(
     () => !window.matchMedia(NARROW_QUERY).matches,
   );
 
-  // 跟随窗口宽度变化：宽屏常驻展开、窄屏自动收起。
+  // 跟随窗口宽度变化：桌面宽度展开并排、极窄自动收起。
   // 用 matchMedia 的 change 事件，比监听 resize 更准（只在跨过断点时触发一次）
   useEffect(() => {
     const mql = window.matchMedia(NARROW_QUERY);
@@ -56,8 +58,10 @@ function App() {
   }
 
   return (
+    // 壳层就是侧栏 + 主栏。侧栏打开时主栏被挤到旁边，对话不会被盖住。
+    // 以后设置页可以放进主栏，会话列表仍留在左侧。
     <div className={`app${sidebarOpen ? "" : " app--collapsed"}`}>
-      {/* 窄屏下侧栏是浮在上面的，这里加一层遮罩，点它就收起侧栏 */}
+      {/* 极窄时侧栏才浮在上面，这时加一层遮罩，点它就收起侧栏 */}
       {sidebarOpen && (
         <div
           className="scrim"
