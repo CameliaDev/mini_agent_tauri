@@ -70,6 +70,10 @@ button {
   /* 极窄时侧栏才是 absolute 抽屉，以 .app 为定位基准。
      桌面宽度侧栏留在这条 flex 里，把主栏挤到右边。 */
   position: relative;
+  /* 并排宽度。JS 拖动时改这个变量；没拖过就是原来的 248px。
+     抽屉宽度是另一变量，不跟着变。 */
+  --sidebar-width: 248px;
+  --sidebar-drawer-width: 248px;
 }
 
 .main {
@@ -86,19 +90,89 @@ button {
 /* ---------- 左侧会话栏 ---------- */
 
 .sidebar {
-  width: 248px;
+  width: var(--sidebar-width);
   flex: none;
   display: flex;
   flex-direction: column;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   /* 宽屏用 margin 收起，窄屏用 left 收起。不要用 transform：
-     WebKitGTK 会把合成层里的 textarea 画到屏幕左上角。 */
+     WebKitGTK 会把合成层里的 textarea 画到屏幕左上角。
+     不要把 width 放进 transition：拖动要跟手，而且宽度一带过渡，
+     收起时的负 margin 会和宽度错开，主栏会被拽出屏幕。 */
   transition: margin-left 0.18s ease, left 0.18s ease;
 }
 
 .app--collapsed .sidebar {
-  margin-left: -248px;
+  margin-left: calc(var(--sidebar-width) * -1);
+}
+
+/* 收起状态下窗口变窄、宽度要立刻改时，先关掉这一帧的过渡。
+   见 useSidebarWidth 里的 applyWidth。 */
+.app--no-sidebar-transition .sidebar {
+  transition: none;
+}
+
+/* 右缘拖动手柄。本身宽度是 0，不占 flex 空间；
+   ::before 向两侧伸出一截，方便抓。悬停才显出一条线，不改侧栏外观。 */
+.sidebar-resizer {
+  position: relative;
+  /* 0 宽，不占两栏之间的缝。min-width: 0 免得空 flex 子项被内容最小宽度撑开 */
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  align-self: stretch;
+  z-index: 4;
+  touch-action: none;
+  cursor: col-resize;
+}
+
+.sidebar-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* 只盖住侧栏 2px（边框），其余伸进主栏。
+     再往侧栏里伸会挡住会话列表的滚动条和底栏「设置」。 */
+  left: -2px;
+  width: 10px;
+}
+
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.sidebar-resizer:hover::after,
+body.sidebar-resizing .sidebar-resizer::after {
+  background: var(--border-strong);
+}
+
+.sidebar-resizer:focus {
+  outline: none;
+}
+
+.sidebar-resizer:focus-visible::after {
+  background: var(--accent);
+}
+
+/* 拖的时候指针在主栏、按钮上，也保持 col-resize。
+   按钮自己写了 cursor:pointer，所以这里要用 important 盖过。 */
+body.sidebar-resizing,
+body.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* 收起后右缘在屏幕外，不再留一条能拖的缝 */
+.app--collapsed .sidebar-resizer {
+  display: none;
 }
 
 .sidebar__head {
@@ -861,15 +935,24 @@ button {
     left: 0;
     z-index: 20;
     height: 100%;
+    /* 抽屉不跟已保存的宽度走，避免 400px 的侧栏盖住整个窄窗口。
+       保存的宽度还在，回到并排时再生效。 */
+    width: var(--sidebar-drawer-width);
     box-shadow: 0 0 24px rgba(0, 0, 0, 0.12);
   }
 
   /* 抽屉收起：用 left 移出，不用 transform。
      absolute 元素已经脱离 flex 流，负 margin 不会把主区拉回来；
-     transform 则会让 WebKitGTK 把输入框画到屏幕左上角。 */
+     transform 则会让 WebKitGTK 把输入框画到屏幕左上角。
+     left 必须和上面的抽屉宽度是同一个数，否则收不干净。 */
   .app--collapsed .sidebar {
-    left: -248px;
+    left: calc(var(--sidebar-drawer-width) * -1);
     margin-left: 0;
+  }
+
+  /* 抽屉没有可拖的右缘：浮层宽度是固定的，拖了也会把主栏的点击吃掉 */
+  .sidebar-resizer {
+    display: none;
   }
 }
 
