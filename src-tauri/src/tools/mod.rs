@@ -4,6 +4,8 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 // 引入工具调用和工具描述相关的数据结构
 use crate::protocol::{ToolCall, ToolDefinition};
+// bash 要在命令还在跑的时候看见「停止」，所以注册表把取消信号传进去
+use crate::agent::cancel::CancelSignal;
 
 // 声明内置工具子模块，Rust 会去加载 src/tools/builtin/mod.rs
 pub mod builtin;
@@ -34,8 +36,16 @@ impl ToolRegistry {
         Self::with_workspace(sandbox::load_workspace_root())
     }
 
-    // 用调用方给的根目录注册工具。测试传临时目录，应用传 AppState 里的根
+    // 用调用方给的根目录注册工具。测试传临时目录。这条路径没有取消信号
     pub fn with_workspace(root: impl Into<std::path::PathBuf>) -> Self {
+        Self::with_workspace_and_cancel(root, None)
+    }
+
+    // 应用走这里：根目录和这一轮的取消信号一起传进来，bash 才能在停止时杀进程
+    pub fn with_workspace_and_cancel(
+        root: impl Into<std::path::PathBuf>,
+        cancel: Option<CancelSignal>,
+    ) -> Self {
         let root = root.into();
         // 先建一个空表
         let mut tools: HashMap<String, Box<dyn Tool>> = HashMap::new();
@@ -55,7 +65,12 @@ impl ToolRegistry {
             &mut tools,
             Box::new(builtin::edit::EditFile::new(root.clone())),
         );
-        register(&mut tools, Box::new(builtin::list_dir::ListDir::new(root)));
+        register(
+            &mut tools,
+            Box::new(builtin::list_dir::ListDir::new(root.clone())),
+        );
+        // bash 的当前目录也是这个根。取消信号只有它会用
+        register(&mut tools, Box::new(builtin::bash::Bash::new(root, cancel)));
         // 返回装好工具的注册表
         Self { tools }
     }
@@ -110,6 +125,7 @@ mod tests {
             "write",
             "edit",
             "list_dir",
+            "bash",
         ] {
             assert!(names.contains(name), "缺少工具 {name}，现有 {names:?}");
         }
@@ -123,6 +139,15 @@ mod tests {
             .as_array()
             .expect("required 应该是数组");
         assert!(required.iter().any(|item| item == "path"));
+        let bash = registry
+            .definitions()
+            .into_iter()
+            .find(|definition| definition.function.name == "bash")
+            .expect("应该有 bash");
+        let bash_required = bash.function.parameters["required"]
+            .as_array()
+            .expect("required 应该是数组");
+        assert!(bash_required.iter().any(|item| item == "command"));
     }
 
     #[tokio::test]

@@ -10,3 +10,5 @@ pub mod write;
 pub mod edit;
 // 声明 list_dir 子模块：列出一层目录
 pub mod list_dir;
+// 声明 bash 子模块：在工作区里执行命令
+pub mod bash;

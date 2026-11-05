@@ -72,7 +72,7 @@ npm run tauri dev
 | `npm run tauri dev` | 日常开发 |
 | `npm run tauri build` | 打包安装包 |
 | `cd src-tauri && cargo check` | 后端类型检查 |
-| `cd src-tauri && cargo test` | 后端单元测试（41 个） |
+| `cd src-tauri && cargo test` | 后端单元测试（49 个） |
 | `cd src-tauri && cargo fmt --check` | 后端格式，与 CI 相同 |
 | `cd src-tauri && cargo clippy --all-targets -- -D warnings` | 后端 lint，与 CI 相同 |
 | `npx tsc --noEmit` | 前端类型检查 |
@@ -152,14 +152,14 @@ npm run tauri dev
 
 | 检查 | 命令 | 当前状态 |
 | --- | --- | --- |
-| 后端单元测试 | `cd src-tauri && cargo test` | **41 passed**（SSE 6 / 取消 4 / 存储 7 / 沙箱与文件工具 24） |
+| 后端单元测试 | `cd src-tauri && cargo test` | **49 passed**（SSE 6 / 取消 4 / 存储 7 / 沙箱与文件工具 24 / bash 8） |
 | 后端格式 | `cd src-tauri && cargo fmt --check` | 通过 |
 | 后端 lint | `cargo clippy --all-targets -- -D warnings` | 无警告 |
 | 前端类型 | `npx tsc --noEmit` | 通过 |
 | 前端构建 | `npm run build` | 通过 |
 | CI | [`.github/workflows/ci.yml`](./.github/workflows/ci.md) | PR 与 `main` 上跑上面这几项，不打包 Tauri 安装包 |
 
-测试刻意集中在四类「最容易悄悄坏掉」的地方：SSE 分片解析、取消信号语义、SQLite 读写与级联删除、工作区沙箱（路径逃逸、截断、唯一匹配）。`cargo test` 不需要任何外部服务或 API Key。文件工具的测试用临时目录，不碰仓库里的文件。
+测试刻意集中在五类「最容易悄悄坏掉」的地方：SSE 分片解析、取消信号语义、SQLite 读写与级联删除、工作区沙箱（路径逃逸、截断、唯一匹配）、bash（危险命令护栏、超时、输出截断、取消时杀进程）。`cargo test` 不需要任何外部服务或 API Key。文件工具和 bash 的测试用临时目录，不碰仓库里的文件。
 
 ### 2.4 安全与密钥
 
@@ -170,6 +170,7 @@ npm run tauri dev
 | XSS | `react-markdown` 默认转义 HTML，模型输出里的 `<script>` 只显示为文本 |
 | IPC 权限 | `capabilities/default.json` 只给 `core:default` + `opener:default`。窗口没有 Tauri 文件系统 / shell 权限 |
 | 文件工具沙箱 | `read` / `write` / `edit` / `list_dir` 走 Rust `std::fs`，只允许访问 `AppState.workspace_root`。`..`、根外绝对路径、指向外部的符号链接都会拒绝 |
+| bash | 在工作区根目录起一个子进程，不是 Tauri 的 shell 插件。粗黑名单拒绝 `rm -rf /`、格式化磁盘和关机。`cd /` 之后的破坏拦不住。子进程环境里会去掉 `DEEPSEEK_API_KEY` 和 `MINI_AGENT_API_KEY` |
 | 工作区内的密钥 | 沙箱不隐藏根目录里面的文件。`.env` 如果放在工作区里，模型可以用 `read` 读到。把 `MINI_AGENT_WORKSPACE` 指到不含密钥的目录，或不要把密钥放进工作区 |
 | 密钥读取 | 后端 `app/state.rs` 通过 `dotenvy` 注入 `AppState`，前端永远拿不到 Key |
 | 数据库位置 | 系统应用数据目录（`%APPDATA%/<应用名>/mini_agent.db`），不在仓库里 |
@@ -193,8 +194,9 @@ npm run tauri dev
 | `write` | 覆盖写入。先写同目录临时文件，再 `rename` 替换。父目录必须已经存在 |
 | `edit` | 把唯一的一段 `old_string` 换成 `new_string`。找不到或找到多处都报错，并且不改文件 |
 | `list_dir` | 只列一层。跳过名为 `node_modules`、`target`、`.git` 的目录，路径中间经过它们也会拒绝 |
+| `bash` | 在工作区根目录执行一条命令。Unix 是 `sh -c`，Windows 是 `cmd /C`。默认 30 秒超时，最长 120 秒；stdout / stderr 各保留 16 KiB。危险命令会在启动前拒绝，用户点停止时杀掉子进程 |
 
-工作区根来自 `MINI_AGENT_WORKSPACE`，不设则是进程启动时的当前目录，记在 `AppState.workspace_root` 里。细节在 [`src-tauri/src/tools/sandbox.md`](./src-tauri/src/tools/sandbox.md)。
+工作区根来自 `MINI_AGENT_WORKSPACE`，不设则是进程启动时的当前目录，记在 `AppState.workspace_root` 里。细节在 [`src-tauri/src/tools/sandbox.md`](./src-tauri/src/tools/sandbox.md) 和 [`src-tauri/src/tools/builtin/bash.md`](./src-tauri/src/tools/builtin/bash.md)。
 
 ---
 
@@ -307,11 +309,11 @@ mini_agent/
 
 | 类别 | 文档 | 份数 |
 | --- | --- | --- |
-| 后端源码 | `src-tauri/src/**/*.md` | 25 |
+| 后端源码 | `src-tauri/src/**/*.md` | 26 |
 | 前端源码 | [`src/README.md`](./src/README.md)（总览）+ 各文件 `.md` | 15 |
 | 根 / 后端配置 / 静态资源 | `index.md`、`package.md`、`tsconfig.md`、`Cargo.md`、`tauri.conf.md`、`.gitignore.md`、`.github/workflows/ci.md`、`icons/README.md` 等 | 22 |
 | 复刻指南 | [`docs/handcraft.md`](./docs/handcraft.md) | 1 |
-| **合计** | | **63** |
+| **合计** | | **64** |
 
 统计口径：`git ls-files '*.md'`（即实际入库的文档）。`.codebuddy/skills/` 下的 SKILL.md 属于 IDE 技能数据，不入库也不计入。
 
@@ -356,7 +358,7 @@ mini_agent/
 | SSE 未合并同一事件的多行 `data` | 少数厂商兼容问题 | 按空行切事件再合并 `data` |
 | 未裁剪历史 | 长对话 token 膨胀 | 按 token 预算裁剪或摘要 |
 | 模板残留依赖与图标 | 安装体积、品牌一致性 | 清理 `package.json` 未用包、换自有图标 |
-| 没有 bash 工具 | 模型不能在工作区里跑测试或 git | 留待后续，本轮只做文件工具和 CI |
+| bash 不是沙箱 | 黑名单按空白分词，挡不住 `cd /` 之后的破坏；`echo "rm -rf /"` 这种无害句子会被误伤 | 真要隔离再上容器或系统调用过滤 |
 | 界面打磨未做完 | 停止后的收尾、工具卡片时序、空状态引导还要再核 | 留待后续的 UX 打磨 |
 
 ---

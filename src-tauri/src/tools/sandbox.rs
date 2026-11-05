@@ -354,7 +354,7 @@ fn json_usize(value: &serde_json::Value, key: &str) -> anyhow::Result<usize> {
     anyhow::bail!("{key} 必须是非负整数")
 }
 
-// 测试用的临时工作区。放在这个模块里，是因为四个工具的测试都要一个真实目录。
+// 测试用的临时工作区。放在这个模块里，是因为文件工具和 bash 的测试都要一个真实目录。
 #[cfg(test)]
 pub(crate) struct TestWorkspace {
     path: PathBuf,

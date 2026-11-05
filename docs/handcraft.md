@@ -137,9 +137,11 @@ pub trait Tool: Send + Sync {
 | `edit` | 把唯一的一段 `old_string` 换成 `new_string`。找不到、或找到多处，都报错并且不改文件 |
 | `list_dir` | 只列一层。跳过名为 `node_modules`、`target`、`.git` 的目录；路径中间经过它们也会拒绝 |
 
-路径一律先过 `src-tauri/src/tools/sandbox.rs` 的 `resolve_inside`：相对路径拼到工作区根上，`..` 和绝对路径归一化之后如果还在根外面，就直接拒绝。指向外部的符号链接同样拒绝。根目录来自环境变量 `MINI_AGENT_WORKSPACE`，不设就用进程启动时的当前目录，记在 `AppState.workspace_root` 里，由 `run_agent` 传给 `ToolRegistry::with_workspace`。
+路径一律先过 `src-tauri/src/tools/sandbox.rs` 的 `resolve_inside`：相对路径拼到工作区根上，`..` 和绝对路径归一化之后如果还在根外面，就直接拒绝。指向外部的符号链接同样拒绝。根目录来自环境变量 `MINI_AGENT_WORKSPACE`，不设就用进程启动时的当前目录，记在 `AppState.workspace_root` 里，由 `run_agent` 传给 `ToolRegistry::with_workspace_and_cancel`。同一份取消信号也从这里传进去。
 
 沙箱挡的是「逃出工作区」，不是「隐藏工作区里的密钥」。`.env` 如果放在工作区根下，模型可以用 `read` 读到它。
+
+同一张注册表里还有 `bash`。它没有 `cwd` 参数，当前目录固定是工作区根。Unix 上实际跑的是 `sh -c`，Windows 上是 `cmd /C`。默认 30 秒超时，最长 120 秒；stdout 和 stderr 各只保留前 16 KiB。`rm -rf /`、格式化磁盘、关机会在启动前被拒绝。用户点「停止」时，这条命令的子进程会被杀掉（Unix 杀进程组，Windows 用 `taskkill /T`）。这是按空白分词的黑名单，不是沙箱。
 
 ## 第 5 步：把「模型 → 工具 → 模型」接成闭环
 
@@ -481,7 +483,7 @@ await runAgent(history, sessionId);
 
 ## 复刻完成检查清单
 
-- [ ] `cd src-tauri && cargo test` 有测试通过（当前仓库是 41 个：SSE、取消、存储、沙箱与文件工具）
+- [ ] `cd src-tauri && cargo test` 有测试通过（当前仓库是 49 个：SSE、取消、存储、沙箱与文件工具、bash）
 - [ ] `.github/workflows/ci.yml` 会在 PR 上跑 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`，以及 `npm ci`、`npx tsc --noEmit`、`npm run build`（不打包 Tauri 安装包）
 - [ ] 刷新页面后对话还在
 - [ ] 点「停止」能打断生成，且已收到的半截文字保留

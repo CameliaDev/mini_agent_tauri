@@ -38,8 +38,8 @@ pub async fn run_agent(
     workspace_root: PathBuf,
 ) -> anyhow::Result<ChatResponse> {
     // 1) 准备两样东西：工具注册表（菜单）和模型适配器（跑腿的）
-    // 创建内置工具注册表，文件工具都绑在同一个根上
-    let registry = ToolRegistry::with_workspace(workspace_root);
+    // 文件工具和 bash 都绑在同一个根上。取消信号交给 bash，停止时才能杀掉子进程
+    let registry = ToolRegistry::with_workspace_and_cancel(workspace_root, Some(cancel.clone()));
     // 按配置创建对应的模型适配器
     let provider = create_provider(&config);
     // 把工具清单（菜单）注入请求，模型才知道有哪些工具可用

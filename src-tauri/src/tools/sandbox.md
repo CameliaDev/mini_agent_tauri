@@ -45,7 +45,7 @@
 ## 依赖关系
 
 - 依赖：标准库路径、文件 IO、`anyhow`。
-- 被谁使用：四个文件工具、[`ToolRegistry::builtin()`](./mod.md)、[`AppState::from_env()`](../app/state.md)。
+- 被谁使用：四个文件工具、[`bash`](./builtin/bash.md)（用 `prepare_root` 和参数助手）、[`ToolRegistry::builtin()`](./mod.md)、[`AppState::from_env()`](../app/state.md)。
 
 ## 当前行为说明
 

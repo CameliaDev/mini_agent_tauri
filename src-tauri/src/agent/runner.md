@@ -16,7 +16,7 @@
 
 ## 逻辑要点
 
-1. 开头用传入的 `workspace_root` 创建 `ToolRegistry::with_workspace(...)`，再 `create_provider(&config)`，并把 `registry.definitions()` 覆盖写入 `req.tools`。文件工具整轮共用这一个根，循环中途不重读环境变量。
+1. 开头用传入的 `workspace_root` 和 `cancel.clone()` 创建 `ToolRegistry::with_workspace_and_cancel(...)`，再 `create_provider(&config)`，并把 `registry.definitions()` 覆盖写入 `req.tools`。文件工具和 bash 整轮共用这一个根，循环中途不重读环境变量。bash 拿到的是同一份取消信号。
 2. `for _ in 0..10` 是硬上限，防止模型反复点工具导致死循环。
 3. 每轮调用 `provider.chat_stream(&req, tx.clone(), cancel.clone())`，流式事件通过传入的 `tx` 进入通道；返回值 `ChatResponse` 里带着本轮完整文字、工具调用列表和 `finish_reason`。
 4. `result.tool_calls.is_empty()` 表示模型给出最终答复：推一个 `StreamEvent::Done`，直接 `return Ok(result)`。
@@ -50,13 +50,14 @@
 
 ## 取消检查点
 
-主循环里有两处会检查取消信号：
+主循环里有两处会检查取消信号。bash 在执行过程中还有一处，因为它是唯一会自己等信号的工具：
 
 | 位置 | 为什么在那里 |
 | --- | --- |
 | 每轮开始前 | 工具执行完可能还要跑好几秒，那段时间里用户可能改主意了 |
 | 每个工具执行前 | 模型点了工具但用户在这期间点了停止，就别白跑工具了 |
+| bash 执行过程中 | 注册表把同一份信号交给 [`bash`](../tools/builtin/bash.md)。命令还在跑时，工具自己的 `select!` 杀掉子进程并返回 `Err`。循环回到上面的检查点后结束这一轮，不再请求模型 |
 
-两个检查点都会推 `StreamEvent::Cancelled` 并直接返回，`finish_reason` 标成 `"cancelled"`。
+前两处检查点都会推 `StreamEvent::Cancelled` 并直接返回，`finish_reason` 标成 `"cancelled"`。bash 自己不推这个事件：它只负责把进程杀掉，循环在下一次检查时收尾。
 
-网络读取过程中的打断不在这里，而在 [`providers/sse.rs`](../providers/sse.md) 的 `tokio::select!` 里——那里才是真正「阻塞等待」的地方。
+网络读取过程中的打断不在这里，而在 [`providers/sse.rs`](../providers/sse.md) 的 `tokio::select!` 里。命令还在跑时的打断在 bash 工具里。
